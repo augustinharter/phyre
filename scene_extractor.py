@@ -53,5 +53,5 @@ class Extractor:
 
 if __name__ == "__main__":
   loader = Extractor("rollouts/test")
-  batch = loader.extract(n=10, stride=3, n_in=3, visual_delay=500)
-  print(batch)
+  X, Y = loader.extract(n=10, stride=3, n_in=3, visual_delay=500)
+  print(X, Y)
