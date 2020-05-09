@@ -130,10 +130,10 @@ def simulate(space, path):
       if contact == 1:
         contact +=1
         for i in range(-10, 0):
-          cv2.imwrite(path+f"/{frames}.jpg", screens[step+i])
+          cv2.imwrite(path+f"/{frames}.jpg", cv2.cvtColor(screens[step+i], cv2.COLOR_RGB2BGR))
           frames +=1
 
-      cv2.imwrite(path+f"/{frames}.jpg", screens[step])
+      cv2.imwrite(path+f"/{frames}.jpg", cv2.cvtColor(screens[step], cv2.COLOR_RGB2BGR))
       frames +=1
       if frames>=20:
         return
