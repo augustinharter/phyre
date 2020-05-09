@@ -63,18 +63,36 @@ def setup_space():
   return space
 
 # Collision
-def begin_col(arbiter, space, data):
-  global tags, solved
+colls = []
+def pre_col(arbiter, space, data):
+  global tags, contact, colls
+  sh = space.shapes
+  tags = {1:sh[6], 2:sh[4], 6:sh[-1], 4:sh[5]}
+  objs = {sh[6]:1, sh[4]:2, sh[-1]:6, sh[5]:4, sh[1]:0, sh[2]:0, sh[3]:0, sh[0]:0}
   a, b = arbiter.shapes
-  try:
-    a, b = tags[a], tags[b]
-  except Exception:
-   pass
-  if (a == 1 and b == 2) or (a == 2 and b == 1):
-    solved = True
-    print("solved!")
-
+  if a==tags[1] or b==tags[1]:
+    # Check goal condition
+    if b == tags[2] or a == tags[2]:
+      contact += 1   
+    # Protocoll Collision
+    if a != tags[1]:    
+      colls[-1] = (objs[a])
+    else:
+      colls[-1] = (objs[b])
   return True
+
+def sep_col(arbiter, space, data):
+  global tags, contact, colls
+  sh = space.shapes
+  tags = {1:sh[6], 2:sh[4], 6:sh[-1], 4:sh[5]}
+  objs = {sh[6]:1, sh[4]:2, sh[-1]:6, sh[5]:4, sh[1]:0, sh[2]:0, sh[3]:0, sh[0]:0}
+  a, b = arbiter.shapes
+  if a==tags[1] or b==tags[1]:
+    # Check goal condition
+    if b == tags[2] or a == tags[2]:
+      if contact <=100:
+        contact = 0
+
 
 # Simulation
 def find_solving_action(space):
@@ -87,13 +105,35 @@ def find_solving_action(space):
       break
   return action_radius, action_pos
 
-def simulate(space, visual = False):
-  for frame in range(350):
+def simulate(space, visual = False, apply_vel=None, apply_step=None):
+  global tags, contact, colls
+  sh = space.shapes
+  tags = {1:sh[6], 2:sh[4], 6:sh[-1], 4:sh[5]}
+
+  if not apply_step:
+    apply_vel = (random.random()*200-100, random.random()*200-100)
+    apply_step = random.randint(1,100)
+  rollout = {'pos':[], 'vel':[], 'apply_vel':apply_vel, 'apply_step':apply_step, 'collisions':[], 'solve_steps':None}
+
+  b = tags[1]
+  colls = []
+  for step in range(350):
     for event in pygame.event.get():
       if event.type == QUIT:
         sys.exit(0)
       elif event.type == KEYDOWN and event.key == K_ESCAPE:
         sys.exit(0)
+
+    colls.append(0)
+    if step == apply_step:
+      b.body.velocity = apply_vel
+
+    if not visual:
+      rollout["pos"].append(b.body.position)
+      rollout["vel"].append(b.body.velocity)
+
+    if contact>100:
+      rollout["solve_steps"] = step - rollout["apply_step"]
 
     space.step(1/70.0)
 
@@ -102,28 +142,30 @@ def simulate(space, visual = False):
       space.debug_draw(draw_options)
       pygame.display.flip()
       clock.tick(50)
+  rollout["collisions"] = colls
+  print(rollout)
+  return apply_vel, apply_step
 
 space_init = setup_space()
 handler = space_init.add_default_collision_handler()
-handler.begin = begin_col
+handler.pre_solve = pre_col
 
 # MAIN LOOP
 count = 0
 while True:
-  solved = False
+  contact = 0
   space = space_init.copy()
-
-  action_radius, action_pos = find_solving_action(space)
-  
-  sh = space.shapes
-  tags = {sh[6]:1, sh[4]:2, sh[-1]:6, sh[5]:4}
+  #action_radius, action_pos = find_solving_action(space)
 
   # SIMULATION
   print("simulating...", count)
-  simulate(space)
+  apply_vel, apply_step = simulate(space, visual=False)
+  print(apply_step, apply_vel)
   count += 1
 
-  if solved:
+  if contact>100:
     space = space_init.copy()
-    add_ball(space, action_radius, action_pos)
-    simulate(space, visual=True)
+    sh = space.shapes
+    tags = {1:sh[6], 2:sh[4], 6:sh[-1], 4:sh[5]}
+    #add_ball(space, action_radius, action_pos)
+    simulate(space, visual=True, apply_vel=apply_vel, apply_step= apply_step)
