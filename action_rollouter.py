@@ -145,7 +145,7 @@ def simulate(space, path):
       frames +=1
       if frames>=20:
         fp = open(path+f"/positions.txt", mode="w")
-        json.dump(positions, fp)
+        json.dump(positions[interaction_step-10:interaction_step+10], fp)
         return True
 
     #clock.tick(50)
