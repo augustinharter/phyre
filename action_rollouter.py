@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import trange
 import pathlib
 import sys
+import json
 
 FOLDER_NAME = "test"
 NUM_ROLLOUTS = 100 if not len(sys.argv) == 2 else int(sys.argv[1])
@@ -54,7 +55,7 @@ def setup_space():
   floor_body = pymunk.Body(body_type = pymunk.Body.STATIC)
   wall_body.position = (0, 0)
   floor = pymunk.Segment(floor_body, (0, 3), (size, 3), segment_width)
-  floor.color = (0, 0, 180, 255)
+  floor.color = (0, 0, 200, 255)
   floor.friction = 1
 
   plank_body = pymunk.Body(body_type = pymunk.Body.STATIC)
@@ -110,6 +111,8 @@ def simulate(space, path):
   sh = space.shapes
   tags = {1:sh[6], 2:sh[4], 6:sh[-1], 4:sh[5]}
   screens = []
+  positions = []
+  interaction_step = 0
 
   frames = 0
   for step in range(350):
@@ -125,18 +128,25 @@ def simulate(space, path):
     space.debug_draw(draw_options)
     pygame.display.flip()
     screens.append(np.moveaxis(np.array(pygame.surfarray.array3d(screen)), 0,1)) 
+    positions.append((tuple(tags[1].body.position), tuple(tags[6].body.position)))
 
     if contact>0:
       if contact == 1:
+        interaction_step = step
         contact +=1
         for i in range(-10, 0):
-          cv2.imwrite(path+f"/{frames}.jpg", cv2.cvtColor(screens[step+i], cv2.COLOR_RGB2BGR))
+          try:
+            cv2.imwrite(path+f"/{frames}.jpg", cv2.cvtColor(screens[step+i], cv2.COLOR_RGB2BGR))
+          except IndexError:
+            return False
           frames +=1
 
       cv2.imwrite(path+f"/{frames}.jpg", cv2.cvtColor(screens[step], cv2.COLOR_RGB2BGR))
       frames +=1
       if frames>=20:
-        return
+        fp = open(path+f"/positions.txt", mode="w")
+        json.dump(positions, fp)
+        return True
 
     #clock.tick(50)
 
@@ -158,7 +168,7 @@ while True:
   print("simulating...", count)
   path = f"rollouts/{FOLDER_NAME}/{count}"
   pathlib.Path(path).mkdir(parents=True, exist_ok=True)
-  simulate(space, path)
-  count += 1
+  if simulate(space, path):
+    count += 1
   if count>=NUM_ROLLOUTS:
     break
