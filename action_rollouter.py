@@ -131,6 +131,8 @@ def simulate(space, path):
     positions.append((tuple(tags[1].body.position), tuple(tags[6].body.position)))
 
     if contact>0:
+      if step<10:
+        return False
       if contact == 1:
         interaction_step = step
         contact +=1
@@ -147,7 +149,7 @@ def simulate(space, path):
         fp = open(path+f"/positions.txt", mode="w")
         json.dump(positions[interaction_step-10:interaction_step+10], fp)
         return True
-
+  return False
     #clock.tick(50)
 
 space_init = setup_space()
