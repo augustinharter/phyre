@@ -99,7 +99,7 @@ def sep_col(arbiter, space, data):
 def find_solving_action(space, pos, radius):
   global size
   while True:
-    action_radius = 16 + (random.random()-0.5) * 16
+    action_radius = 16 + (random.random()-0.5) * 8
     action_pos = ((random.random()-0.5)*2*(radius+action_radius-2)+pos[0], (3*size//5) + random.random()*2*size//5)
     if not space.point_query_nearest(action_pos, action_radius+5, []):
       add_ball(space, action_radius, action_pos)

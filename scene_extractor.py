@@ -1,6 +1,8 @@
 import cv2
 import numpy as np
 import json
+import pathlib
+import numpy as np
 
 class Extractor:
   def __init__(self, path):
@@ -20,8 +22,8 @@ class Extractor:
       sub_y = []
       pos = json.load(open(f"{self.path}/{self.pos+i}/positions.txt"))
       # Filter for desired frames:
+      x, y = int(pos[10][0][0]), int(pos[10][0][1])
       for j in range((-(n_in-1)*stride), (n_out*stride)+1, stride):
-        x, y = int(pos[10+j][0][0]), int(pos[10+j][0][1])
         img = cv2.imread(f"{self.path}/{self.pos+i}/{10+j}.jpg")
         img = cv2.copyMakeBorder(img, padding,0,0,0, cv2.BORDER_CONSTANT, value=[255,255,255])
         img = img[-(y+r):-(y-r), x-r:x+r]
@@ -40,8 +42,9 @@ class Extractor:
           frame = np.logical_and(img[:,:,1] >195, img[:,:,1] <205, img[:,:,2]<3).astype(float)      
           sub_x.append(frame)
           # Static objects filter
-          frame = np.logical_or(img.sum(axis=2)<5, np.logical_and(img[:,:,0] >195, img[:,:,1] <3, img[:,:,2]<3)).astype(float)
-          sub_x.append(frame)
+          if j == 0:
+            frame = np.logical_or(img.sum(axis=2)<5, np.logical_and(img[:,:,0] >195, img[:,:,1] <3, img[:,:,2]<3)).astype(float)
+            sub_x.append(frame)
         
       if visual_delay:
         for x in sub_x:
@@ -57,8 +60,20 @@ class Extractor:
 
     self.pos += n
     return X, Y
+  
+  def save(self, X, Y, path):
+    X = np.array(X)
+    Y = np.array(Y)
+    for i in range(len(X)):
+      pathlib.Path(f"{path}/{i}/train").mkdir(parents=True, exist_ok=True)
+      for x in range(len(X[i])):
+        cv2.imwrite(f"{path}/{i}/train/layer{x}.jpg", X[i][x]*255)
+      for y in range(len(Y[i])):
+        cv2.imwrite(f"{path}/{i}/train/target{y}.jpg", Y[i][y]*255)
+        cv2.imshow("test", Y[i][y])
+        #cv2.waitKey(delay=500)
 
 if __name__ == "__main__":
   loader = Extractor("rollouts/test")
   X, Y = loader.extract(n=99, stride=3, n_in=3, visual_delay=0)
-  print(X, Y)
+  loader.save(X, Y, "rollouts/test")
