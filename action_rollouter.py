@@ -14,6 +14,7 @@ import json
 FOLDER_NAME = "test"
 NUM_ROLLOUTS = 100 if not len(sys.argv) == 2 else int(sys.argv[1])
 TIME_PER_STEP = 100  #No real time value correspondance, only relative meaning
+NUM_INTERACTION_FRAMES = 40
 
 # INIT
 pygame.init()
@@ -32,7 +33,7 @@ def add_ball(space, radius, pos, color= (200, 0 , 0, 255)):
   body = pymunk.Body(mass, moment)
   body.position = pos
   shape = pymunk.Circle(body, radius)
-  shape.friction = 0.5
+  shape.friction = 0.2
   shape.color = color
   space.add(body, shape)
   return shape
@@ -56,13 +57,13 @@ def setup_space():
   wall_body.position = (0, 0)
   floor = pymunk.Segment(floor_body, (0, 3), (size, 3), segment_width)
   floor.color = (0, 0, 200, 255)
-  floor.friction = 1
+  floor.friction = 0.2
 
   plank_body = pymunk.Body(body_type = pymunk.Body.STATIC)
   plank_body.position = (0, 156)
   plank = pymunk.Segment(plank_body, (0, 0), (3*size//5, 0), segment_width)
   plank.color = (0, 0, 0, 255)
-  plank.friction = 1
+  plank.friction = 0.2
 
   space.add(floor_body, floor, plank_body, plank)
 
@@ -115,6 +116,7 @@ def simulate(space, path):
   interaction_step = 0
 
   frames = 0
+  half = NUM_INTERACTION_FRAMES//2
   for step in range(350):
     for event in pygame.event.get():
       if event.type == QUIT:
@@ -131,12 +133,12 @@ def simulate(space, path):
     positions.append((tuple(tags[1].body.position), tuple(tags[6].body.position)))
 
     if contact>0:
-      if step<10:
+      if step<half:
         return False
       if contact == 1:
         interaction_step = step
         contact +=1
-        for i in range(-10, 0):
+        for i in range(-half, 0):
           try:
             cv2.imwrite(path+f"/{frames}.jpg", cv2.cvtColor(screens[step+i], cv2.COLOR_RGB2BGR))
           except IndexError:
@@ -145,9 +147,9 @@ def simulate(space, path):
 
       cv2.imwrite(path+f"/{frames}.jpg", cv2.cvtColor(screens[step], cv2.COLOR_RGB2BGR))
       frames +=1
-      if frames>=20:
+      if frames>=NUM_INTERACTION_FRAMES:
         fp = open(path+f"/positions.txt", mode="w")
-        json.dump(positions[interaction_step-10:interaction_step+10], fp)
+        json.dump(positions[interaction_step-half:interaction_step+half], fp)
         return True
   return False
     #clock.tick(50)
