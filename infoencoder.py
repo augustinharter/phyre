@@ -57,13 +57,13 @@ class InfoEncoder(nn.Module):
         emb1 = self.lin_enc1(X)
         res = self.lin_dec(emb1)
         target_loss = F.mse_loss(res, X)
-        #emb2 = self.lin_enc2(res)
-        #emb_loss = F.mse_loss(emb2, emb1)
-        loss = target_loss #+ emb_loss
+        emb2 = self.lin_enc2(res)
+        emb_loss = F.mse_loss(emb2, emb1)
+        loss = target_loss + 10*emb_loss
         opti.zero_grad()
         loss.backward()
         opti.step()
-        return res.detach().view(-1,1,28,28), target_loss.item(), 0#emb_loss.item()
+        return res.detach().view(-1,1,28,28), target_loss.item(), emb_loss.item()
 
 
 
