@@ -35,8 +35,9 @@ class Extractor:
           cv2.waitKey(delay=visual_delay)
       
         # Red ball filter, somehow there are some red noise pixels, that need to be eroded
-        red = cv2.inRange(frame, np.array([0,245,190]), np.array([15,255,210]))
-        sub_y.append(red)
+        if j == 0:
+          red = cv2.inRange(frame, np.array([0,245,190]), np.array([15,255,210]))
+          sub_y.append(red)
       
         # Green ball filter
         green =  cv2.inRange(frame, np.array([50,245,190]), np.array([70,255,210]))

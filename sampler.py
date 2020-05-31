@@ -20,7 +20,7 @@ for task in tasks:
     while solved < number_to_solve:
         tries += 1
         action = sim.sample()
-        res = sim.simulate_action(0, action)
+        res = sim.simulate_action(0, action, need_featurized_objects=True)
         if res.status.is_solved():
             print("solved "+task+" with", tries, "tries")
             tries = 0
@@ -33,5 +33,6 @@ for task in tasks:
                 cv2.imwrite(path_str+f"/{str(i)}.jpg", img)
                 with open(path_str+"/objects.pickle", 'wb') as handle:
                     pickle.dump(res.featurized_objects, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    #print(res.featurized_objects)
                 with open(path_str+"/action.txt", 'w') as handle:
                     handle.write(str(action))
