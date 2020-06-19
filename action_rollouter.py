@@ -22,10 +22,8 @@ size = 256
 screen = pygame.display.set_mode((size, size))
 pygame.display.set_caption("Phyre Task 00002:015")
 clock = pygame.time.Clock()
-
 draw_options = pymunk.pygame_util.DrawOptions(screen)
 
-# SETUP
 # Space
 def add_ball(space, radius, pos, color= (200, 0 , 0, 255)):
   mass = radius / 5
@@ -123,55 +121,67 @@ def simulate(space, path):
         sys.exit(0)
       elif event.type == KEYDOWN and event.key == K_ESCAPE:
         sys.exit(0)
-      
+    
+    # Stepping the Space
     space.step(TIME_PER_STEP/7000)
 
+    # Drawing the scene
     screen.fill((255,255,255))
     space.debug_draw(draw_options)
     pygame.display.flip()
     screens.append(np.moveaxis(np.array(pygame.surfarray.array3d(screen)), 0,1)) 
     positions.append((tuple(tags[1].body.position), tuple(tags[6].body.position)))
 
+    # Checking for Action Collision
     if contact>0:
       if step<half:
         return False
       if contact == 1:
         interaction_step = step
         contact +=1
+        # Loop: Saving frames from t-X upto t+0
         for i in range(-half, 0):
           try:
             cv2.imwrite(path+f"/{frames}.jpg", cv2.cvtColor(screens[step+i], cv2.COLOR_RGB2BGR))
           except IndexError:
             return False
           frames +=1
-
+      # Saving current frame
       cv2.imwrite(path+f"/{frames}.jpg", cv2.cvtColor(screens[step], cv2.COLOR_RGB2BGR))
       frames +=1
+      # Checking if enough frames were collected -> returning True
       if frames>=NUM_INTERACTION_FRAMES:
+        # Saving rollout infromations: Positions of objects [(goal ball, action ball)]
         fp = open(path+f"/positions.txt", mode="w")
         json.dump(positions[interaction_step-half:interaction_step+half], fp)
         return True
+  # False when Simulation ended without gathering (enough) collision rollout frames
   return False
     #clock.tick(50)
 
+# SETUP
 space_init = setup_space()
 handler = space_init.add_default_collision_handler()
 handler.pre_solve = pre_col
 
-# MAIN LOOP
+# MAIN LOOP: collecting NUM_ROLLOUTS rollouts
 count = 0
 while True:
+  # Resetting Space
   contact = 0
   space = space_init.copy()
+
+  # Choosing radi and pos of balls
   pos = (size/3, size*0.8 + (random.random()-0.5)*80)
   radius = 16 + (random.random()-0.5) * 16
   ball = add_ball(space, radius, pos, color = (0, 200, 0, 255))
   action_pos, action_radius = find_solving_action(space, pos, radius)
 
-  # SIMULATION
+  # Simulating
   print("simulating...", count)
   path = f"rollouts/{FOLDER_NAME}/{count}"
   pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+  # Checking if simulation was succesful
   if simulate(space, path):
     count += 1
   if count>=NUM_ROLLOUTS:

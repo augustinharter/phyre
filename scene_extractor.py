@@ -5,6 +5,7 @@ import pathlib
 import numpy as np
 
 class Extractor:
+  """Extractor class to extract and save datasets from raw rollouts"""
   def __init__(self, path, num_frames = 40):
     super().__init__()
     self.path = path
@@ -12,9 +13,11 @@ class Extractor:
     self.num_frames = num_frames
   
   def rewind(self):
+    """rewinding the Extractor if you want to use extract-method multiple times from same starting point"""
     self.pos = 0
 
   def extract(self, n=1, n_channels=3, stride=1, visual_delay=0, r=32):
+    """method for extracting a dataset from a raw rollout"""
     padding = 20
     X = []
     Y = []
@@ -67,6 +70,7 @@ class Extractor:
     return X, Y
   
   def save(self, X, Y, path):
+    """method for saving an extracted dataset"""
     X = np.array(X)
     Y = np.array(Y)
     #print(X, Y)
