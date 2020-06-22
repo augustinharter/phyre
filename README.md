@@ -1,6 +1,9 @@
 # PHYRE
 Project space for tackling the PHYsical REasoning benchmark test (phyre.ai)
 
+## PHYRE roullouts
+use `sampler.py` to collect solving phyre rollouts from the original simulator
+
 ## Pymunk Simulator
 For concept exploration and proofing pymunk is used to imitate the pyhre simulator.
 Pymunk can be completely intercepted and customized to try out concepts and to gather custom data.
