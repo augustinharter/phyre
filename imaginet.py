@@ -132,10 +132,9 @@ class ImagiNet(nn.Module):
         #X = F.relu(X[:,None,0])
         return X
 
-class ImagiNet2(nn.Module):
-    def __init__(self):
+class FlowNet(nn.Module):
+    def __init__(self, in_dim, chs):
         super().__init__()
-        chs = 16
         #self.feature_dims = feature_dims
         #self.embed_dims = embed_dims
         #self.final_conv_width = ((int(self.feature_dims**0.5)//4)-2)
@@ -149,7 +148,7 @@ class ImagiNet2(nn.Module):
         self.u2 =    SpatialConv(conv_fn(), "up", inplace=True)
         self.d2 =  SpatialConv(conv_fn(), "down", inplace=True)
         self.init_conv = nn.Sequential(
-            nn.Conv2d(8, chs, 3, 1, 1),
+            nn.Conv2d(in_dim, chs, 3, 1, 1),
             nn.Tanh())
         self.end_conv = nn.Sequential(
             nn.Conv2d(chs, 1, 3, 1, 1),
@@ -189,6 +188,74 @@ class ImagiNet2(nn.Module):
         X = self.end_conv(X)
         #X = F.relu(X[:,None,0])
         return X
+
+class UpFlowNet(nn.Module):
+    def __init__(self, in_dim, chs):
+        super().__init__()
+        #self.feature_dims = feature_dims
+        #self.embed_dims = embed_dims
+        #self.final_conv_width = ((int(self.feature_dims**0.5)//4)-2)
+        conv_fn = lambda: nn.Conv1d(chs, chs, 5, 1, 2)
+        self.r1 = SpatialConv(conv_fn(), "right", inplace=True)
+        self.l1 =  SpatialConv(conv_fn(), "left", inplace=True)
+        self.u1 =    SpatialConv(conv_fn(), "up", inplace=True)
+        self.d1 =  SpatialConv(conv_fn(), "down", inplace=True)
+        self.r2 = SpatialConv(conv_fn(), "right", inplace=True)
+        self.l2 =  SpatialConv(conv_fn(), "left", inplace=True)
+        self.u2 =    SpatialConv(conv_fn(), "up", inplace=True)
+        self.d2 =  SpatialConv(conv_fn(), "down", inplace=True)
+        self.init_conv = nn.Sequential(
+            nn.Conv2d(in_dim, chs, 3, 1, 1),
+            nn.Tanh())
+        self.end_conv = nn.Sequential(
+            nn.Conv2d(chs, 1, 3, 1, 1),
+            nn.Sigmoid())
+        self.mid_conv = nn.Sequential(
+            nn.Conv2d(7, 7, 3, 1, 1),
+            nn.Tanh())
+        self.big_conv = nn.Sequential(
+            nn.Conv2d( 1, 16, 4, 2, 1),
+            nn.LeakyReLU(0.1),
+            nn.Conv2d(16, 16, 4, 2, 1),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(16,  8, 4, 2, 1),
+            nn.LeakyReLU(0.1))
+        self.deconv = nn.Sequential(
+            #nn.Linear(embed_dims, 8*self.final_conv_width**2),
+            nn.Tanh(),
+            #View((-1, 8, self.final_conv_width, self.final_conv_width)),
+            nn.ConvTranspose2d(8, 16, 3, 1),
+            nn.Tanh(),
+            nn.ConvTranspose2d(16, 16, 4, 2, 1),
+            nn.Tanh(),
+            nn.ConvTranspose2d(16,  1, 4, 2, 1)) 
+
+    def forward(self, X):
+        X = self.init_conv(X)
+        for n in range(1):
+            X = self.u1(X)
+            #X = self.d1(X)
+            #X = self.l1(X)
+            #X = self.r1(X)
+            X = self.u2(X)
+            #X = self.d2(X)
+            #X = self.l2(X)
+            #X = self.r2(X)
+            #X = self.mid_conv(X)
+        X = self.end_conv(X)
+        #X = F.relu(X[:,None,0])
+        return X
+
+class ActionBallNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.model = nn.Sequential(
+            nn.Conv2d(1, 4, 3, 1, 1),
+            nn.Conv2d(4, 1, 5, 1, 2),
+            nn.Sigmoid()
+        )
+    def forward(self, X):
+        return self.model(X)
 
 def neighbs(pos, shape, back, value):
     y, x = pos
@@ -254,12 +321,13 @@ def prepare_data(data, size):
             if with_base and j == 0:
                 base = trajectory
             else:
+                action_ball = roll[0, 0].copy()
                 roll[0, 0] = np.zeros_like(roll[0,0])
                 #print(goal_prior)
                 # Contains the initial scene without action
                 X.append(roll[0])
                 # Contains goaltarget, actiontarget, basetrajectory
-                Y.append(np.stack((trajectory, action, base if with_base else np.zeros_like(roll[0,0]))))
+                Y.append(np.stack((trajectory, action, base if with_base else np.zeros_like(roll[0,0]), action_ball)))
                 #plt.imshow(trajectory)
                 #plt.show()
     print("Finished preparing!")
@@ -273,14 +341,39 @@ def load_dataset(path, size=(32,32)):
     dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X,Y), 32, shuffle=True)
     return dataloader
 
+def extract_action(X):
+    floor = 0.15
+    top = 1.0
+    # Creating Height mask which multiples top rows with 1 
+    # and reduces factor towards floor for bottom row
+    height_mask =  T.linspace(top, floor, X.shape[2]).repeat(X.shape[0], X.shape[3], 1).transpose(1,2)[:,None,:,:]
+    x = F.avg_pool2d(X, 5, 1, 2)*height_mask
+    tmp = x.reshape(X.shape[0], X.shape[1], -1)
+    args = tmp.argmax(dim=2)
+    local_masks = T.zeros_like(X)
+    points = T.zeros_like(tmp)
+    for i in range(X.shape[0]):
+        tmp[i,0, args[i]] = 1
+        points[i,0, args[i]] = 1
+        j = args[i]//X.shape[3]
+        k = args[i]%X.shape[3]
+        local_masks[i,:,j-6:j+7,k-6:k+7] = 1
+    x = tmp.reshape_as(X)
+    return X*local_masks+points.reshape_as(X)
+
 #%%
-dataloader = load_dataset("data/phyre_all_obs", size=(32,32))
+if __name__ == "__main__":
+    dataloader = load_dataset("data/phyre_all_obs", size=(32,32))
 #%%
-model = ImagiNet()
-model2 = ImagiNet2()
+if __name__ == "__main__":
+    model = FlowNet(7, 16)
+    model2 = FlowNet(8, 16)
+    model3 = UpFlowNet(9, 8)
 #%%
-opti = T.optim.Adam(model.parameters(recurse=True), lr=1e-3)
-opti2 = T.optim.Adam(model2.parameters(recurse=True), lr=1e-3)
+if __name__ == "__main__":
+    opti = T.optim.Adam(model.parameters(recurse=True), lr=1e-3)
+    opti2 = T.optim.Adam(model2.parameters(recurse=True), lr=1e-3)
+    opti3 = T.optim.Adam(model3.parameters(recurse=True), lr=1e-3)
 #%%
 def train():
     for e in range(100):
@@ -327,16 +420,48 @@ def train2():
                     T.ones(32,1), Y[0,1].detach(),T.ones(32,1), A[0,0].detach()), dim=1))
                 plt.show()
 
+def train3():
+    for e in range(100):
+        print("epoch", e)
+        for i, (X, Y) in enumerate(dataloader):
+            with T.no_grad():
+                Z = model(X)
+                A = model2(T.cat((X[:,1:], Y[:,None,2], Z), dim=1))
+            #B = model3(T.cat((X[:,1:], Y[:,None,2], Z, A), dim=1))
+            B = extract_action(A)
+            #loss = F.binary_cross_entropy(B[:,0], Y[:,3])
+            #opti3.zero_grad()
+            #loss.backward()
+            #opti3.step()
+            #print(loss.item())
+            if not i%10:
+                clear_output(wait=True)
+                orig = T.cat(tuple(T.cat((sub, T.ones(32,1)*0.5), dim=1) for sub in X[0]), dim=1)
+                print(orig.shape)
+                plt.imshow(orig)
+                plt.show()
+                print(X.shape, Y.shape, Z.shape)
+                plt.imshow(T.cat((Y[0,0].detach(), T.ones(32,1), Z[0,0].detach(), T.ones(32,1), Y[0,2].detach(),
+                    T.ones(32,1), Y[0,1].detach(),T.ones(32,1), A[0,0].detach(), T.ones(32,1), Y[0,3].detach(),
+                    T.ones(32,1), B[0,0].detach()), dim=1))
+                plt.show()
+
 #%%
-#train()
-model.load_state_dict(T.load("saves/imaginet-c16-all.pt"))
-train2()
+if __name__ == "__main__":
+    #train()
+    model.load_state_dict(T.load("saves/imaginet-c16-all.pt"))
+    #train2()
+    model2.load_state_dict(T.load("saves/imaginet2-c16-all.pt"))
+    train3()
 # %%
-#T.save(model.state_dict(), "saves/imaginet-c16-all-v2.pt")
-T.save(model2.state_dict(), "saves/imaginet2-c16-all.pt")
+if __name__ == "__main__":
+    #T.save(model.state_dict(), "saves/imaginet-c16-all-v2.pt")
+    #T.save(model2.state_dict(), "saves/imaginet2-c16-all.pt")
+    T.save(model3.state_dict(), "saves/imaginet3-c16-all.pt")
 # %%
-model.load_state_dict(T.load("saves/imaginet-c16-all.pt"))
-dataloader = load_dataset("data/phyre_grid_obs", size=(32,32))
+if __name__ == "__main__":
+    model.load_state_dict(T.load("saves/imaginet-c16-all.pt"))
+    dataloader = load_dataset("data/phyre_grid_obs", size=(32,32))
 #%%
 def test():
     for i, (X, Y) in enumerate(dataloader):
@@ -355,5 +480,6 @@ def test():
             #print(X.shape, Y.shape, Z.shape)
             plt.imsave(f"result/scnn/a-path/{j}.png",T.cat((Y[j,0].detach(), T.ones(32,1), Z[j,0].detach(), T.ones(32,1), Y[j,2].detach(),
                     T.ones(32,1), Y[j,1].detach(),T.ones(32,1), A[j,0].detach()), dim=1).numpy())
-test()
+if __name__ == "__main__":
+    test()
 # %%
