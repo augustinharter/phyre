@@ -327,7 +327,7 @@ if __name__ == "__main__":
     eval_setup = 'ball_within_template'
     train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
     if args.t:
-        train_dataloader = make_mono_dataset(f"data/phyre_fold_{fold_id}_train", size=(32,32), tasks=train_ids)
+        train_dataloader, index = make_mono_dataset(f"data/phyre_fold_{fold_id}_train", size=(32,32), tasks=train_ids)
 #%%
 if __name__ == "__main__":
     tar_net = FlowNet(5, 16)
@@ -556,6 +556,6 @@ if __name__ == "__main__" and args.i:
     tar_net.load_state_dict(T.load(f"saves/flownet_tar_{args.path_id}.pt"))
     act_net.load_state_dict(T.load(f"saves/flownet_act_{args.path_id}.pt"))
     ext_net.load_state_dict(T.load(f"saves/flownet_ext_{args.path_id}.pt"))
-    test_dataloader = make_mono_dataset(f"data/phyre_fold_{fold_id}_test", size=(32,32), tasks=test_ids)
+    test_dataloader, index = make_mono_dataset(f"data/phyre_fold_{fold_id}_test", size=(32,32), tasks=test_ids)
     inspect(tar_net, act_net, ext_net, test_dataloader)
 # %%

@@ -27,18 +27,20 @@ def make_dual_dataset(path, size=(32,32), save=True):
 def make_mono_dataset(path, size=(32,32), save=True, tasks=[]):
     if os.path.exists(path+".pickle"):
        X = T.load(path+'.pickle')
+       index = T.load(path+'_index.pickle')
        print("Loaded dataset with shape:", X.shape)
     else:
         if tasks:
             collect_solving_observations(path, tasks, n_per_task=1, stride=5)
             pass
-        X = load_phyre_rollout_data(path)
-        X = format_raw_rollout_data(X, size=size)
-        X = T.tensor(X).float()
+        data_generator = load_phyre_rollout_data(path)
+        data, index = format_raw_rollout_data(data_generator, size=size)
+        X = T.tensor(data).float()
         if save:
             T.save(X, path+'.pickle')
+            T.save(index, path+'_index.pickle')
     dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), 32, shuffle=True)
-    return dataloader
+    return dataloader, index
 
 def prepare_data(data, size):
     targetchannel = 1
@@ -107,24 +109,33 @@ def extract_channels_and_paths(rollout, path_idxs=[1,0], size=(32,32), gamma=1):
 def format_raw_rollout_data(data, size=(32,32)):
     targetchannel = 1
     data_bundle = []
+    lib_dict = dict()
     print("Formating data...")
     #x = np.zeros((X.shape[0], 7, size[0], size[1]))
-    for i, (base, trial) in enumerate(data):
-        print(f"at sample {i}")
+    for i, (base, trial, info) in enumerate(data):
+        print(f"at sample {i}; {info}")
         #base_path = extract_channels_and_paths(base, channels=[1], path_idxs=[0], size=size)[1]
         #trial_channels = extract_channels_and_paths(trial, size=size)
         #sample = np.append(trial_channels, base_path[None], axis=0)
         try:
+            task, subtask, number = info
             base_path = extract_channels_and_paths(base, path_idxs=[1], size=size)[-1]
             trial_channels = extract_channels_and_paths(trial, path_idxs=[1,2,0], size=size)
             sample = np.append(trial_channels, base_path[None], axis=0)
             #plt.imshow(np.concatenate(tuple(np.concatenate((sub, T.ones(32,1)*0.5), axis=1) for sub in sample), axis=1))
             #plt.show()
             data_bundle.append(sample)
+            
+            # Create indexing dict
+            key = task+':'+subtask
+            if not key in lib_dict:
+                lib_dict[key] = [i]
+            else:
+                lib_dict[key].append(i)
         except Exception as identifier:
             print(identifier)
     print("Finished preparing!")
-    return data_bundle
+    return data_bundle, lib_dict
 
 def load_phyre_rollout_data(path, base=True):
     s = "/"
@@ -139,7 +150,7 @@ def load_phyre_rollout_data(path, base=True):
                 with open(final_path, 'rb') as handle:
                     trial_rollout = pickle.load(handle)
                 if base:
-                    yield(base_rollout, trial_rollout)
+                    yield(base_rollout, trial_rollout, (task, variation, trialfolder))
                 else:
                     yield(trial_rollout)
     

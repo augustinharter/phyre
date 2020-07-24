@@ -52,6 +52,7 @@ def collect_solving_observations(path, tasks, n_per_task = 10, collect_base=True
     number_to_solve = n_per_task
     cache = phyre.get_default_100k_cache('ball')
     actions = cache.action_array
+    lib_dict = dict()
 
     sim = phyre.initialize_simulator(tasks, 'ball')
     for idx, task in enumerate(tasks):
