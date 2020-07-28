@@ -105,6 +105,56 @@ def collect_solving_observations(path, tasks, n_per_task = 10, collect_base=True
 
     print("FINISH collecting rollouts!")
 
+def collect_specific_channel_paths(path, tasks, channel, stride=10, size=(256,256)):
+    end_char = '\r'
+    tries = 0
+    max_tries = 100
+    base_path = path
+    number_to_solve = 10
+    cache = phyre.get_default_100k_cache('ball')
+    actions = cache.action_array
+    data_dict = dict()
+
+    sim = phyre.initialize_simulator(tasks, 'ball')
+    for idx, task in enumerate(tasks):
+        # COLLECT SOLVES
+        solved = 0
+        while solved < number_to_solve:
+            path_str = f"{base_path}/{task[:5]}/{task[6:]}/{str(solved)}"
+            if not os.path.exists(path_str+"/observations.pickle"):
+                print(f"collecting channel {channel} from {task}: trial {solved} with {tries+1} tries", end = end_char)
+                tries += 1
+                action = actions[cache.load_simulation_states(task)==1]
+                if len(action)==0:
+                    print("no solution action in cache at task", task)
+                    action = [np.random.rand(3)]
+                action = random.choice(action)
+                res = sim.simulate_action(idx, action,
+                    need_featurized_objects=True, stride=stride)
+                if res.status.is_solved():
+                    tries = 0
+                    solved += 1
+                    #pathlib.Path(path_str).mkdir(parents=True, exist_ok=True)
+                    rollout = np.array([[cv2.resize((scene==ch).astype(float), size, cv2.INTER_MAX) for ch in range(1,7)] for scene in res.images])
+                    extracted_path = np.max(rollout[:,channel], axis=0)
+                    # Collect index
+                    key = task
+                    if key in data_dict:
+                        data_dict[key].append(extracted_path)
+                    else:
+                        data_dict[key] = [extracted_path]
+                if tries>max_tries:
+                    break
+            else:
+                solved += 1
+                print(f"skipping {task}: trial {solved}", end = end_char)
+
+    # Save data_dict
+    with open(f'{base_path}/channel_paths.pickle', 'wb') as fp:
+        pickle.dump(data_dict, fp, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print(f"FINISH collecting channel {channel} paths!")
+
 def collect_gridded_observations(path, n_per_task = 10):
     tries = 0
     tasks = ['00012:002', '00011:004', '00008:062', '00002:047']
@@ -229,5 +279,11 @@ if __name__ == "__main__":
     #collect_all_observations("data/phyre_test_obs", n_per_task=1)
     #collect_base_observations("data/phyre_all_obs")
     #print(np.array(list(load_phyre_rollouts("data/phyre_test_obs"))[:10]))
-    get_available_tasks()
-            
+    #get_available_tasks()
+    fold_id = 0
+    eval_setup = 'ball_within_template'
+    train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+    all_tasks = train_ids+dev_ids+test_ids
+    template13_tasks = [t for t in all_tasks if t.startswith('00013:')]
+
+    collect_specific_channel_paths(f'./data/template13_action_paths_10x', template13_tasks, 0)
