@@ -392,6 +392,7 @@ if __name__ == "__main__":
     train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
     if args.t:
         train_dataloader, index = make_mono_dataset(f"data/phyre_fold_{fold_id}_train", size=(32,32), tasks=train_ids)
+    exit(0)
 #%%
 if __name__ == "__main__":
     tar_net = FlowNet(5, 16)
