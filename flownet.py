@@ -74,6 +74,70 @@ class SpatialConv(nn.Module):
                 pos += add
             return Y
 
+class SequentialConv(nn.Module):
+    def __init__(self, conv, direction, inplace=True):
+        super().__init__()
+        self.inplace = inplace
+        self.conv = conv
+        self.direction = direction
+
+    def forward(self, X):
+        
+        sideways = False
+        direction = self.direction
+        if direction=="right":
+            sideways = True
+            pos = 0
+            end = X.shape[3]-1
+            add = 1
+        elif direction=="left":
+            sideways = True
+            end = 0
+            pos = X.shape[3]-1
+            add = -1
+        elif direction=="up":
+            end = 0
+            pos = X.shape[2]-1
+            add = -1
+        elif direction=="down":
+            pos = 0
+            end = X.shape[2]-1
+            add = 1
+        else:
+            print("Direction not understood!")
+            return X
+
+        #ORIGINAL "INPLACE" CONCEPT from paper
+        if self.inplace:
+            X = X.clone()
+            kw = (self.conv.kernel_size[1] if sideways else self.conv.kernel_size[0])-1
+            pos += kw * add
+            while pos!=end:
+                if sideways:
+                    X[:,:,:,pos+add] += T.tanh(self.conv(X[:,:,:,pos-kw:pos]))
+                else:
+                    X[:,:,pos+add,:] += T.tanh(self.conv(X[:,:,pos-kw:pos,:]))
+                pos += add
+            return X
+        
+        #Alternative concept
+        else:
+            if sideways:
+                first = T.tanh(self.conv(X[:,:,:,pos-kw:pos]))
+                Y = T.zeros(X.shape[0], first.shape[1], X.shape[2], first.shape[2])
+                Y[:,:,:,pos] = first
+            else:
+                first = T.tanh(self.conv(X[:,:,pos-kw:pos,:]))
+                Y = T.zeros(X.shape[0], first.shape[1], first.shape[2], X.shape[3])
+                Y[:,:,pos,:] = first
+            while pos!=end:
+                if sideways:
+                    Y[:,:,:,pos+add] += Y[:,:,:,pos] + T.tanh(self.conv(X[:,:,:,pos+add]))
+                else:
+                    Y[:,:,pos+add,:] += Y[:,:,pos,:] + T.tanh(self.conv(X[:,:,pos+add,:]))
+                pos += add
+            return Y
+
 class ImagiNet(nn.Module):
     def __init__(self):
         super().__init__()
