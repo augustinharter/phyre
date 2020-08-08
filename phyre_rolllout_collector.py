@@ -8,6 +8,7 @@ import numpy as np
 import json
 import random
 import cv2
+import matplotlib.pyplot as plt
 
 def collect_images():
     tries = 0
@@ -155,6 +156,82 @@ def collect_specific_channel_paths(path, tasks, channel, stride=10, size=(256,25
 
     print(f"FINISH collecting channel {channel} paths!")
 
+def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(256,256)):
+    end_char = '\r'
+    tries = 0
+    max_tries = 100
+    base_path = save_path
+    cache = phyre.get_default_100k_cache('ball')
+    actions = cache.action_array
+
+    sim = phyre.initialize_simulator(tasks, 'ball')
+    for idx, task in enumerate(tasks):
+        # COLLECT SOLVES
+        n_collected = 0
+        while n_collected < number_per_task:
+            tries += 1
+
+            # getting action
+            action = actions[cache.load_simulation_states(task)==1]
+            print(f"collected {n_collected} interactions from {task} with {tries+1} tries", end = end_char)
+            if len(action)==0:
+                print("no solution action in cache at task", task)
+                action = [np.random.rand(3)]
+            action = random.choice(action)
+
+            # simulating action
+            res = sim.simulate_action(idx, action,
+                need_featurized_objects=True, stride=1)
+
+            # checking result for contact
+            def check_contact(res: phyre.Simulation):
+                print(res.images.shape)
+                print(len(res.bitmap_seq))
+                print(res.status.is_solved())
+                idx1 = res.body_list.index('GoalObject')
+                idx2 = res.body_list.index('GreenObject')
+                print(idx1, idx2)
+                print(res.body_list)
+
+                for i,m in enumerate(res.bitmap_seq):
+                    if m[idx1][idx2]:
+                        green_idx = res.featurized_objects.colors.index('GREEN')
+                        red_idx = res.featurized_objects.colors.index('RED')
+                        print(res.featurized_objects.diameters[[green_idx,red_idx]])
+                        print(res.featurized_objects.features[i,green_idx])
+                        print(res.featurized_objects.features[i, red_idx])
+                        print(i)
+                        plt.imshow(phyre.observations_to_float_rgb(res.images[i]))
+                        plt.show()
+                        
+
+                        return (False, 0, (0,0))
+
+                return (False, 0, (0,0))
+
+            contact, i_step, obj_pos = check_contact(res)
+            if  contact:
+                tries = 0
+                n_collected += 1
+
+                width = size[0]
+                wh = width//2
+                starty = obj_pos[0]
+                startx = obj_pos[1]
+                rollout = np.pad(np.array([[(scene==ch).astype(float) for ch in range(1,7)] for scene in res.images]), ((0,0), (wh,wh), (wh,wh)))
+                extracted_scene = rollout[i_step-step_size:i_step+step_size+1:step_size, starty:starty+width, startx:startx+width]
+
+
+            if tries>max_tries:
+                break
+            break
+
+    # Save data_dict
+    with open(f'{base_path}/channel_paths.pickle', 'wb') as fp:
+        pickle.dump(data_dict, fp, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print(f"FINISH collecting channel {channel} paths!")
+
 def collect_gridded_observations(path, n_per_task = 10):
     tries = 0
     tasks = ['00012:002', '00011:004', '00008:062', '00002:047']
@@ -285,5 +362,7 @@ if __name__ == "__main__":
     train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
     all_tasks = train_ids+dev_ids+test_ids
     template13_tasks = [t for t in all_tasks if t.startswith('00013:')]
+    template2_tasks = [t for t in all_tasks if t.startswith('00002:')]
 
-    collect_specific_channel_paths(f'./data/template13_action_paths_10x', template13_tasks, 0)
+    #collect_specific_channel_paths(f'./data/template13_action_paths_10x', template13_tasks, 0)
+    collect_interactions(f'./data/template2_interactions', [template2_tasks[0]], 1, 1, (64,64))
