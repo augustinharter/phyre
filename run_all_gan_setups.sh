@@ -18,8 +18,8 @@
 #python action_cgan.py --path zoomed-staged -sequ --verbose 10 --saveevery 10 --epochs 151 --geneval 10
 #python action_cgan.py --path zoomed-staged -genonly -sequ --verbose 10 --saveevery 10 --epochs 150 --geneval 10
 
-python action_cgan.py --path full-staged -full -sequ --width 64 --verbose 10 --saveevery 1 --epochs 150 --geneval 10
+#python action_cgan.py --path full-staged -full -sequ --width 64 --verbose 10 --saveevery 1 --epochs 150 --geneval 10
 python action_cgan.py --path full-staged -full -genonly -sequ --width 64
 
-python action_cgan.py --path full-double -full --width 64 --verbose 10 --saveevery 1 --epochs 150 --geneval 10
+#python action_cgan.py --path full-double -full --width 64 --verbose 10 --saveevery 1 --epochs 150 --geneval 10
 python action_cgan.py --path full-double -full -genonly --width 64

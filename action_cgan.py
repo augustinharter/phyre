@@ -305,11 +305,13 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
         if sequ is not None:
             noise2 = T.randn(cond_batch.shape[0], generator.noise_dim)   
             primed_cond = T.cat((cond_batch[:,:generator.s_chan], fakes), dim=1)
+            #primed_cond =cond_batch[:,:generator.s_chan+1]
             primed_fake = sequ(primed_cond, noise2)
             fakes = T.cat((fakes, primed_fake), dim=1)
 
     # visualize
     single = fakes.shape[1] == 1
+    '''
     if not grid:
         gridsize = (int(fakes.shape[0]**0.5)+1)
         grid = (gridsize, gridsize)
@@ -324,10 +326,28 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
             cond_batch[i,5] if not single else T.ones(fake.shape[1],1), T.ones(fake.shape[1],1),
             fake[0],         T.ones(fake.shape[1],1), 
             fake[1] if not single else T.ones(fake.shape[1],1)), dim=1))
+    '''
+    actions = cond_batch[:,-2:]
+    g = fakes if not single else T.cat((fakes, fakes), axis=1)
+    wid = fakes.shape[2]
+    num_cells = fakes.shape[0]
+    s = cond_batch
+    green = np.max(np.stack((0.5*s[:,0],s[:,1],0.5*s[:,2]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    blue = s[:,3].reshape(num_cells,1,wid,wid)
+    red = np.max(np.stack((0.5*actions[:,0],actions[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    orig = np.concatenate((red, green, blue), axis=1)
+    red = np.max(np.stack((0.5*g[:,0],g[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    gen = np.concatenate((red, green, blue), axis=1)
+    #print(combined)
+    combined = np.concatenate((orig, gen), axis=1).reshape(2*num_cells,3,wid,wid)
+    grid = make_grid(T.tensor(combined), nrow=8, normalize=True)
+    #plt.imshow(grid[0])
+    #plt.show(block=False)
 
     # save
     os.makedirs(f'./result/action_cgan/{path}', exist_ok=True)
-    fig.savefig(f'./result/action_cgan/{path}/{save_id}')
+    #fig.savefig(f'./result/action_cgan/{path}/{save_id}', dpi=1000)
+    save_image(grid, f'./result/action_cgan/{path}/{save_id}grid.png')
     #plt.show()
 
 def save_models(models, save_path):
@@ -381,5 +401,5 @@ if __name__ == "__main__":
             generator.load_state_dict(T.load(SAVE_PATH+'/generator.pt'))
             if args.sequ:
                 generator2.load_state_dict(T.load(SAVE_PATH+'/generator2.pt'))
-            generate(generator, batch[:12], 1, f'{args.path}-results', i, grid=(4,3), sequ = generator2 if args.sequ else None)
-            generate(generator, batch[:12], 1, f'{args.path}-results', str(i)+'_', grid=(4,3), sequ = generator2 if args.sequ else None)
+            generate(generator, batch[:32], 1, f'{args.path}-results', i, grid=(4,2), sequ = generator2 if args.sequ else None)
+            generate(generator, batch[:32], 1, f'{args.path}-results', str(i)+'_', grid=(4,2), sequ = generator2 if args.sequ else None)
