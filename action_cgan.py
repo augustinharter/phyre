@@ -9,7 +9,6 @@ from torchvision import transforms
 from torch import autograd
 from torch.autograd import Variable
 from torchvision.utils import make_grid, save_image
-from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from scene_extractor import Extractor
 
@@ -185,11 +184,11 @@ class Generator(nn.Module):
                 nn.LeakyReLU(0.1),
                 nn.Conv2d(8, 16, 4, 2, 1),
                 nn.LeakyReLU(0.1),
-                nn.Conv2d(16, 32, 4, 2, 1),
+                nn.Conv2d(16, 16, 4, 2, 1),
                 nn.LeakyReLU(0.1),
-                nn.Conv2d(32, 64, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.BatchNorm2d(64)
+                #nn.Conv2d(32, 64, 4, 2, 1),
+                #nn.LeakyReLU(0.1),
+                nn.BatchNorm2d(16)
             )
 
         self.lin_model = nn.Sequential(
@@ -208,15 +207,18 @@ class Generator(nn.Module):
         )
 
     def forward(self, scenes, noise):
-        scene_features = self.encoder(scenes)
-        flat_features = scene_features.view(scene_features.shape[0], -1)
+        if self.conv:
+            scene_features = self.encoder(scenes)
+            flat_features = scene_features.view(scene_features.shape[0], -1)
+        else:
+            flat_features = scenes.flatten(start_dim=1)
         x = T.cat([flat_features, noise], 1)
         out = self.conv_model(x) if self.conv else self.lin_model(x)
         return out
 
 #%%
 def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_loader, criterion, args,
-            verbose_every=10, gen_eval_every=10):
+            verbose_every=10, gen_eval_every=10, device='cuda'):
 
     # extract models
     if args.sequ:
@@ -230,28 +232,28 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
     for i, (batch,) in enumerate(data_loader):
         batch.float()
         if args.single:
-            gen_batch = batch[:batch.shape[0]//2,[0,1,2,3,5]]
-            disc_batch = batch[batch.shape[0]//2:,[0,1,2,3,5]]
+            gen_batch = batch[:batch.shape[0]//2,[0,1,2,3,5]].to(device)
+            disc_batch = batch[batch.shape[0]//2:,[0,1,2,3,5]].to(device)
         else:
-            gen_batch = batch[:batch.shape[0]//2]
-            disc_batch = batch[batch.shape[0]//2:]
+            gen_batch = batch[:batch.shape[0]//2].to(device)
+            disc_batch = batch[batch.shape[0]//2:].to(device)
         T.autograd.set_detect_anomaly(True)
 
         # Discriminator
         # Forward
         d_optimizer.zero_grad()
-        noise = T.randn(disc_batch.shape[0], generator.noise_dim)
+        noise = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
         if args.sequ:
             # first stage
             fake = generator(disc_batch[:,:generator.s_chan], noise).detach()
             fake_validity = discriminator(T.cat((disc_batch[:,:generator.s_chan], fake), dim=1))
-            real_validity = discriminator(disc_batch[:,:-1])
+            real_validity = discriminator(disc_batch[:,[0,1,2,3,5]])
             disc_fake_loss = criterion(fake_validity, T.zeros_like(fake_validity))
             disc_real_loss = criterion(real_validity, T.ones_like(real_validity))
             # second stage
-            noise2 = T.randn(disc_batch.shape[0], generator.noise_dim)
+            noise2 = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
             primed_cond = disc_batch[:,:generator2.s_chan]
-            primed_fake = generator2(primed_cond, noise2)
+            primed_fake = generator2(primed_cond, noise2).detach()
             fake_validity2 = discriminator2(T.cat((disc_batch[:,:discriminator2.s_chan], primed_fake), dim=1))
             real_validity2 = discriminator2(disc_batch)
             disc_fake_loss2 = criterion(fake_validity2, T.zeros_like(fake_validity2))
@@ -271,12 +273,12 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
         # Generator
         # Forward
         g_optimizer.zero_grad()
-        noise = T.randn(disc_batch.shape[0], generator.noise_dim)
+        noise = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
         gens = generator(gen_batch[:,:generator.s_chan], noise)
         gen_validity = discriminator(T.cat((gen_batch[:,:generator.s_chan], gens), dim=1))
         gen_loss = criterion(gen_validity, T.ones_like(gen_validity))
         if args.sequ:
-            noise2 = T.randn(disc_batch.shape[0], generator.noise_dim)
+            noise2 = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
             primed_cond = gen_batch[:,:generator2.s_chan]
             primed_fake = generator2(primed_cond, noise2)
             gen_validity2 = discriminator2(T.cat((disc_batch[:,:discriminator2.s_chan], primed_fake), dim=1))
@@ -293,17 +295,17 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
             else:
                 print(f'D: fl {disc_fake_loss} rl {disc_real_loss}  G: {gen_loss}')
 
-        if gen_eval_every and not epoch%gen_eval_every and not i:
+        if gen_eval_every and not (epoch+1)%gen_eval_every and not i:
             generate(generator, gen_batch, 1, args.path+'-training', epoch, sequ=generator2 if args.sequ else None)
             generate(generator, gen_batch, 1, args.path+'-training', str(epoch)+'_', sequ=generator2 if args.sequ else None)
 
 def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = None):
     # generate fakes
     with T.no_grad():
-        noise = T.randn(cond_batch.shape[0], generator.noise_dim)
+        noise = T.randn(cond_batch.shape[0], generator.noise_dim).to(device)
         fakes = generator(cond_batch[:,:generator.s_chan], noise).detach()
         if sequ is not None:
-            noise2 = T.randn(cond_batch.shape[0], generator.noise_dim)   
+            noise2 = T.randn(cond_batch.shape[0], generator.noise_dim).to(device)
             primed_cond = T.cat((cond_batch[:,:generator.s_chan], fakes), dim=1)
             #primed_cond =cond_batch[:,:generator.s_chan+1]
             primed_fake = sequ(primed_cond, noise2)
@@ -327,17 +329,18 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
             fake[0],         T.ones(fake.shape[1],1), 
             fake[1] if not single else T.ones(fake.shape[1],1)), dim=1))
     '''
-    actions = cond_batch[:,-2:]
+    actions = cond_batch[:,-2:].cpu()
     g = fakes if not single else T.cat((fakes, fakes), axis=1)
+    g = g.cpu()
     wid = fakes.shape[2]
     num_cells = fakes.shape[0]
-    s = cond_batch
+    s = cond_batch.cpu()
     green = np.max(np.stack((0.5*s[:,0],s[:,1],0.5*s[:,2]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     blue = s[:,3].reshape(num_cells,1,wid,wid)
     red = np.max(np.stack((0.5*actions[:,0],actions[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    orig = np.concatenate((red, green, blue), axis=1)
+    orig = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
     red = np.max(np.stack((0.5*g[:,0],g[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    gen = np.concatenate((red, green, blue), axis=1)
+    gen = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
     #print(combined)
     combined = np.concatenate((orig, gen), axis=1).reshape(2*num_cells,3,wid,wid)
     grid = make_grid(T.tensor(combined), nrow=8, normalize=True)
@@ -370,8 +373,8 @@ if __name__ == "__main__":
     criterion = nn.BCELoss()
     disc_params = chain(discriminator.parameters(), discriminator2.parameters() if args.sequ else [])
     gen_params = chain(generator.parameters(), generator2.parameters() if args.sequ else [])
-    d_optimizer = T.optim.Adam(disc_params, lr=1e-4)
-    g_optimizer = T.optim.Adam(gen_params, lr=1e-4)
+    d_optimizer = T.optim.Adam(disc_params, lr=1.5e-4)
+    g_optimizer = T.optim.Adam(gen_params, lr=1.5e-4)
 
 #%%
 if __name__ == "__main__":
@@ -381,7 +384,7 @@ if __name__ == "__main__":
             print(f'STARTING epoch {epoch}')
             if args.sequ:
                 train(epoch, [generator, generator2], g_optimizer, [discriminator, discriminator2], d_optimizer, 
-                    data_loader, criterion, args, verbose_every=args.verbose, gen_eval_every=args.geneval)
+                    data_loader, criterion, args, verbose_every=args.verbose, gen_eval_every=args.geneval, device=device)
             else:
                 train(epoch, [generator], g_optimizer, [discriminator], d_optimizer, 
                     data_loader, criterion, args, verbose_every=args.verbose, gen_eval_every=args.geneval)
@@ -396,6 +399,7 @@ if __name__ == "__main__":
     # Generating
     else:
         for i, (batch, ) in enumerate(data_loader):
+            batch = batch.to(device)
             if i ==3:
                 break
             generator.load_state_dict(T.load(SAVE_PATH+'/generator.pt'))
