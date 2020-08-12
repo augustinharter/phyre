@@ -27,6 +27,7 @@ if __name__ == "__main__":
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--path', default='default',type=str)
+    parser.add_argument('--data', default='',type=str)
     parser.add_argument('--verbose', default=10,type=int)
     parser.add_argument('-single', action='store_true')
     parser.add_argument('-genonly', action='store_true')
@@ -44,8 +45,7 @@ if __name__ == "__main__":
 
     BASE_PATH = './saves/action_cgan/'
     SAVE_PATH = BASE_PATH+args.path
-    DATA_PATH = './data/template2_interactions/zoomed_interactions.pickle' if not args.full \
-        else './data/template2_interactions/scene_interactions.pickle'
+    DATA_PATH = f'./data/template2_interactions/{args.data}_interactions.pickle'
     NOISE_DIM = 100
     ONLY_GENERATE = args.genonly
     WIDTH = args.width
@@ -70,43 +70,36 @@ class Discriminator(nn.Module):
         self.conv = conv
         
         self.reason = nn.Sequential(
-            nn.Linear(64*(width//(4 if zoomed else 16))**2, 128),
-            nn.LeakyReLU(0.2),
+            nn.Linear(16*8*8, 128),
+            nn.LeakyReLU(0.1),
             nn.Linear(128,1),
             nn.Sigmoid()
         )
 
-        if zoomed:
-            self.encoder = nn.Sequential(
-                nn.Conv2d(s_chan+a_chan, 32, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.Conv2d(32, 64, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.BatchNorm2d(64)
-            )
-        else:
-            self.encoder = nn.Sequential(
-                nn.Conv2d(s_chan+a_chan, 8, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.Conv2d(8, 16, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.Conv2d(16, 32, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.Conv2d(32, 64, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.BatchNorm2d(64)
-            )
+        enc_mods = []
+        if width == 16:
+            enc_mods.extend([nn.Conv2d(s_chan+a_chan, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
+        if width == 32:
+            enc_mods.extend([nn.Conv2d(s_chan+a_chan, 8, 4, 2, 1), nn.LeakyReLU(0.1),
+                            nn.Conv2d(8, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
+        if width == 64:
+            enc_mods.extend([nn.Conv2d(s_chan+a_chan, 8, 4, 2, 1), nn.LeakyReLU(0.1),
+                            nn.Conv2d(8, 16, 4, 2, 1), nn.LeakyReLU(0.1),
+                            nn.Conv2d(16, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
+        enc_mods.extend([nn.BatchNorm2d(16)])
+
+        self.encoder = nn.Sequential(*enc_mods)
 
         self.lin_model = nn.Sequential(
             nn.Linear(self.width**2*(self.s_chan+self.a_chan), 1024),
             nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
+            #nn.Dropout(0.3),
             nn.Linear(1024, 512),
             nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
+            #nn.Dropout(0.3),
             nn.Linear(512, 256),
             nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
+            #nn.Dropout(0.3),
             nn.Linear(256, 1),
             nn.Sigmoid()
         )
@@ -132,64 +125,45 @@ class View(nn.Module):
 
 #%%
 class Generator(nn.Module):
-    def __init__(self, width, noise_dim, s_chan, a_chan, conv=True, zoomed=True):
+    def __init__(self, width, noise_dim, s_chan, a_chan, conv=True):
         super().__init__()
         self.width = width
         self.noise_dim = noise_dim
         self.s_chan = s_chan
         self.a_chan = a_chan
         self.conv = conv
+        self.enc_width = 8
         
-        if zoomed:
-            self.conv_model = nn.Sequential(
-                nn.Linear(noise_dim+64*(width//4)**2, 1024),
-                nn.ReLU(),
-                nn.BatchNorm1d(1024),
-                nn.Linear(1024, 8*8*16),
-                nn.ReLU(),
-                nn.BatchNorm1d(8*8*16),
-                View((-1, 16, 8, 8)),
-                nn.ConvTranspose2d(16, a_chan, 4, 2, 1),
-                #nn.BatchNorm2d(8),
-                #nn.ConvTranspose2d(8, a_chan, 4, 2, 1),
-                nn.Sigmoid()
-            )
-            self.encoder = nn.Sequential(
-                nn.Conv2d(s_chan, 32, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.Conv2d(32, 64, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.BatchNorm2d(64)
-            )
-        else:
-            self.conv_model = nn.Sequential(
-                nn.Linear(noise_dim+64*(width//16)**2, 1024),
-                nn.ReLU(),
-                nn.BatchNorm1d(1024),
-                nn.Linear(1024, 8*8*16),
-                nn.ReLU(),
-                nn.BatchNorm1d(8*8*16),
-                View((-1, 16, 8, 8)),
-                nn.ConvTranspose2d(16, 8, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.BatchNorm2d(8),
-                nn.ConvTranspose2d(8, 8, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.BatchNorm2d(8),
-                nn.ConvTranspose2d(8, a_chan, 4, 2, 1),
-                nn.Sigmoid()
-            )
-            self.encoder = nn.Sequential(
-                nn.Conv2d(s_chan, 8, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.Conv2d(8, 16, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                nn.Conv2d(16, 16, 4, 2, 1),
-                nn.LeakyReLU(0.1),
-                #nn.Conv2d(32, 64, 4, 2, 1),
-                #nn.LeakyReLU(0.1),
-                nn.BatchNorm2d(16)
-            )
+        self.conv_model = nn.Sequential(
+            nn.Linear(noise_dim+16*self.enc_width**2, 1024),
+            nn.ReLU(),
+            nn.BatchNorm1d(1024),
+            nn.Linear(1024, 8*8*16),
+            nn.ReLU(),
+            nn.BatchNorm1d(8*8*16),
+            View((-1, 16, 8, 8)),
+            nn.ConvTranspose2d(16, 8, 4, 2, 1),
+            nn.LeakyReLU(0.1),
+            nn.BatchNorm2d(8),
+            nn.ConvTranspose2d(8, 8, 4, 2, 1),
+            nn.LeakyReLU(0.1),
+            nn.BatchNorm2d(8),
+            nn.ConvTranspose2d(8, a_chan, 4, 2, 1),
+            nn.Sigmoid()
+        )
+        enc_mods = []
+        if width == 16:
+            enc_mods.extend([nn.Conv2d(s_chan, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
+        if width == 32:
+            enc_mods.extend([nn.Conv2d(s_chan, 8, 4, 2, 1), nn.LeakyReLU(0.1),
+                            nn.Conv2d(8, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
+        if width == 64:
+            enc_mods.extend([nn.Conv2d(s_chan, 8, 4, 2, 1), nn.LeakyReLU(0.1),
+                            nn.Conv2d(8, 16, 4, 2, 1), nn.LeakyReLU(0.1),
+                            nn.Conv2d(16, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
+        enc_mods.extend([nn.BatchNorm2d(16)])
+
+        self.encoder = nn.Sequential(*enc_mods)
 
         self.lin_model = nn.Sequential(
             #1
@@ -342,7 +316,7 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
     red = np.max(np.stack((0.5*g[:,0],g[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     gen = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
     #print(combined)
-    combined = np.concatenate((orig, gen), axis=1).reshape(2*num_cells,3,wid,wid)
+    combined = np.concatenate((orig, gen), axis=1).reshape(2*num_cells,3,wid+2,wid+2)
     grid = make_grid(T.tensor(combined), nrow=8, normalize=True)
     #plt.imshow(grid[0])
     #plt.show(block=False)
@@ -364,11 +338,11 @@ def save_models(models, save_path):
 if __name__ == "__main__":
     # Initializing models
     a_chans = A_CHANNELS-int(args.single)-int(args.sequ)
-    generator = Generator(WIDTH, NOISE_DIM, S_CHANNELS, a_chans, conv= not args.lingen, zoomed=not args.full).to(device)
-    discriminator = Discriminator(WIDTH, S_CHANNELS, a_chans, conv= not args.lindisc, zoomed=not args.full).to(device)
+    generator = Generator(WIDTH, NOISE_DIM, S_CHANNELS, a_chans, conv= not args.lingen).to(device)
+    discriminator = Discriminator(WIDTH, S_CHANNELS, a_chans, conv= not args.lindisc).to(device)
     if args.sequ:
-        generator2 = Generator(WIDTH, NOISE_DIM, S_CHANNELS+1, a_chans, conv= not args.lingen, zoomed=not args.full).to(device)
-        discriminator2 = Discriminator(WIDTH, S_CHANNELS+1, a_chans, conv= not args.lindisc, zoomed=not args.full).to(device)
+        generator2 = Generator(WIDTH, NOISE_DIM, S_CHANNELS+1, a_chans, conv= not args.lingen).to(device)
+        discriminator2 = Discriminator(WIDTH, S_CHANNELS+1, a_chans, conv= not args.lindisc).to(device)
 
     criterion = nn.BCELoss()
     disc_params = chain(discriminator.parameters(), discriminator2.parameters() if args.sequ else [])
@@ -381,7 +355,7 @@ if __name__ == "__main__":
     # Training
     if not ONLY_GENERATE:
         for epoch in range(args.epochs):
-            print(f'STARTING epoch {epoch}')
+            print(f'STARTING epoch {epoch+1}')
             if args.sequ:
                 train(epoch, [generator, generator2], g_optimizer, [discriminator, discriminator2], d_optimizer, 
                     data_loader, criterion, args, verbose_every=args.verbose, gen_eval_every=args.geneval, device=device)
