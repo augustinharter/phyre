@@ -53,7 +53,7 @@ if __name__ == "__main__":
     A_CHANNELS = 2
     BATCH_SIZE = 64
 
-    X = np.zeros((128,S_CHANNELS+A_CHANNELS,WIDTH,WIDTH))
+    #X = np.zeros((128,S_CHANNELS+A_CHANNELS,WIDTH,WIDTH)) Dummy Dataset
     with open(DATA_PATH, 'rb') as fs:
         X = T.tensor(pickle.load(fs), dtype=T.float)
     print('loaded dataset with shape:', X.shape)
@@ -296,10 +296,10 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
                 print(f'D: fl {disc_fake_loss} rl {disc_real_loss}  G: {gen_loss}')
 
         if gen_eval_every and not (epoch+1)%gen_eval_every and not i:
-            generate(generator, gen_batch, 1, args.path+'-training', epoch, sequ=generator2 if args.sequ else None)
-            generate(generator, gen_batch, 1, args.path+'-training', str(epoch)+'_', sequ=generator2 if args.sequ else None)
+            generate(generator, gen_batch, 1, args.path+'-training', epoch, sequ=generator2 if args.sequ else None, device=device)
+            generate(generator, gen_batch, 1, args.path+'-training', str(epoch)+'_', sequ=generator2 if args.sequ else None, device=device)
 
-def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = None):
+def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = None, device="cpu"):
     # generate fakes
     with T.no_grad():
         noise = T.randn(cond_batch.shape[0], generator.noise_dim).to(device)
@@ -396,6 +396,7 @@ if __name__ == "__main__":
                     models['generator2'] = generator2
                     models['discriminator2'] = discriminator2
                 save_models(models, SAVE_PATH)
+
     # Generating
     else:
         for i, (batch, ) in enumerate(data_loader):
@@ -405,5 +406,7 @@ if __name__ == "__main__":
             generator.load_state_dict(T.load(SAVE_PATH+'/generator.pt'))
             if args.sequ:
                 generator2.load_state_dict(T.load(SAVE_PATH+'/generator2.pt'))
-            generate(generator, batch[:32], 1, f'{args.path}-results', i, grid=(4,2), sequ = generator2 if args.sequ else None)
-            generate(generator, batch[:32], 1, f'{args.path}-results', str(i)+'_', grid=(4,2), sequ = generator2 if args.sequ else None)
+            generate(generator, batch[:32], 1, f'{args.path}-results', i, grid=(4,2), 
+                sequ = generator2 if args.sequ else None, device=device)
+            generate(generator, batch[:32], 1, f'{args.path}-results', str(i)+'_', grid=(4,2), 
+                sequ = generator2 if args.sequ else None, device=device)

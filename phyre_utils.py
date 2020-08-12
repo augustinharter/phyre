@@ -154,7 +154,7 @@ def load_phyre_rollout_data(path, base=True):
                 else:
                     yield(trial_rollout)
     
-def pic_to_action_vector(pic):
+def pic_to_action_vector(pic, r_fac=3):
     X, Y = 0, 0
     for y in range(pic.shape[0]):
         for x in range(pic.shape[1]):
@@ -165,7 +165,7 @@ def pic_to_action_vector(pic):
     X /= pic.shape[0]*summed
     Y /= pic.shape[0]*summed
     R = np.sqrt(summed)/pic.shape[0]
-    return X.item(), 1-Y.item(), 3*R.item()
+    return X.item(), 1-Y.item(), r_fac*R.item()
 
 def scenes_to_channels(X, size=(32,32)):
     x = np.zeros((X.shape[0], 7, size[0], size[1]))

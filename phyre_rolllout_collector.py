@@ -157,7 +157,7 @@ def collect_specific_channel_paths(path, tasks, channel, stride=10, size=(256,25
 
     print(f"FINISH collecting channel {channel} paths!")
 
-def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,64), zoom=False, show=False):
+def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,64), static=0, show=False):
     end_char = '\n'
     tries = 0
     max_tries = 100
@@ -166,6 +166,7 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
     actions = cache.action_array
     #base_path = 'data/fiddeling'
     data = []
+    task_lookup = []
     print("NUMBER", number_per_task)
 
     sim = phyre.initialize_simulator(tasks, 'ball')
@@ -231,6 +232,8 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
 
                 # setting up parameters for cutting out selection
                 width = round(256*summed_radii*4)
+                if static:
+                    width = static
                 wh = width//2
                 starty = round((obj_pos[1])*256)
                 startx = round(obj_pos[0]*256)
@@ -242,27 +245,36 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
                 selected_rollout = np.array([[(scene==ch).astype(float) for ch in range(1,7)] for scene in res.images[i_step-step_size:i_step+step_size+1:step_size]])
                 #selected_rollout = np.flip(selected_rollout, axis=2)
                 #print(selected_rollout.shape)
-                ##padded_selected_rollout = np.pad(selected_rollout, ((0,0), (0,0), (wh,wh), (wh,wh)))
-                #print(padded_selected_rollout.shape)
-                ##extracted_scene = padded_selected_rollout[:,:,starty:starty+width, startx:startx+width]
-                extracted_scene = np.flip(selected_rollout, axis=2)
 
+                # Padding
+                padded_selected_rollout = np.pad(selected_rollout, ((0,0), (0,0), (wh,wh), (wh,wh)))
+                #print(padded_selected_rollout.shape)
+
+                # Cutting out
+                extracted_scene = padded_selected_rollout[:,:,starty:starty+width, startx:startx+width]
+
+                # Correcting for flipped indexing from Phyre
+                extracted_scene = np.flip(extracted_scene, axis=2)
+
+                # Formatting and resizing
                 es = extracted_scene
                 channel_formatted_scene = np.stack((es[0,1], es[1,1], es[2,1], np.max(es[1,2:], axis=0), es[0,0], es[1,0]))
                 size_formatted_scene = [cv2.resize(img, size, cv2.INTER_MAX) for img in channel_formatted_scene]
 
                 # saving extracted scene
                 data.append(size_formatted_scene)
+                task_lookup.append(task)
 
                 if show:
+                    print(starty, startx, width)
                     plt.imshow(phyre.observations_to_uint8_rgb(res.images[i_step]))
                     plt.show()
-                    fig, ax = plt.subplots(1,6)
+                    fig, ax = plt.subplots(1,6, sharex=True, sharey=True)
                     for i,img in enumerate(channel_formatted_scene):
                         ax[i].imshow(img)
                     #plt.imshow(np.concatenate([*channel_formatted_scene], axis=1))
                     plt.show()
-                    fig, ax = plt.subplots(1,6)
+                    fig, ax = plt.subplots(1,6, sharex=True, sharey=True)
                     for i,img in enumerate(size_formatted_scene):
                         ax[i].imshow(img)
                     #plt.imshow(np.concatenate([*size_formatted_scene], axis=1))
@@ -273,8 +285,10 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
 
     # Save data to file
     os.makedirs(base_path, exist_ok=True)
-    with open(f'{base_path}/scene_interactions.pickle', 'wb') as fp:
+    with open(f'{base_path}/interactions.pickle', 'wb') as fp:
         pickle.dump(data, fp, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(f'{base_path}/tasklist.pickle', 'wb') as fp:
+        pickle.dump(task_lookup, fp, protocol=pickle.HIGHEST_PROTOCOL)
 
     print(f"FINISH collecting interactions!")
 
@@ -411,4 +425,4 @@ if __name__ == "__main__":
     template2_tasks = [t for t in all_tasks if t.startswith('00002:')]
     print(template2_tasks)
     #collect_specific_channel_paths(f'./data/template13_action_paths_10x', template13_tasks, 0)
-    collect_interactions(f'./data/template2_interactions', template2_tasks, 50, 1, (64,64), show=False)
+    collect_interactions(f'./data/template2_interactions/interactions.pickle', template2_tasks, 50, 1, (64,64), show=False, static=256)
