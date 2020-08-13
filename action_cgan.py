@@ -134,23 +134,37 @@ class Generator(nn.Module):
         self.conv = conv
         self.enc_width = 8
         
-        self.conv_model = nn.Sequential(
+        gen_mods = [
             nn.Linear(noise_dim+16*self.enc_width**2, 1024),
             nn.ReLU(),
             nn.BatchNorm1d(1024),
             nn.Linear(1024, 8*8*16),
             nn.ReLU(),
             nn.BatchNorm1d(8*8*16),
-            View((-1, 16, 8, 8)),
-            nn.ConvTranspose2d(16, 8, 4, 2, 1),
-            nn.LeakyReLU(0.1),
-            nn.BatchNorm2d(8),
-            nn.ConvTranspose2d(8, 8, 4, 2, 1),
-            nn.LeakyReLU(0.1),
-            nn.BatchNorm2d(8),
-            nn.ConvTranspose2d(8, a_chan, 4, 2, 1),
-            nn.Sigmoid()
-        )
+            View((-1, 16, 8, 8))]
+        if width == 64:
+            gen_mods.extend([
+                nn.ConvTranspose2d(16, 8, 4, 2, 1),
+                nn.LeakyReLU(0.1),
+                nn.BatchNorm2d(8),
+                nn.ConvTranspose2d(8, 8, 4, 2, 1),
+                nn.LeakyReLU(0.1),
+                nn.BatchNorm2d(8),
+                nn.ConvTranspose2d(8, a_chan, 4, 2, 1),
+                nn.Sigmoid()])
+        if width == 32:
+            gen_mods.extend([
+                nn.ConvTranspose2d(16, 8, 4, 2, 1),
+                nn.LeakyReLU(0.1),
+                nn.BatchNorm2d(8),
+                nn.ConvTranspose2d(8, a_chan, 4, 2, 1),
+                nn.Sigmoid()])
+        if width == 16:
+            gen_mods.extend([
+                nn.ConvTranspose2d(16, a_chan, 4, 2, 1),
+                nn.Sigmoid()])
+        self.conv_model = nn.Sequential(*gen_mods)
+
         enc_mods = []
         if width == 16:
             enc_mods.extend([nn.Conv2d(s_chan, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
@@ -205,6 +219,7 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
     # Start Epoch
     for i, (batch,) in enumerate(data_loader):
         batch.float()
+
         if args.single:
             gen_batch = batch[:batch.shape[0]//2,[0,1,2,3,5]].to(device)
             disc_batch = batch[batch.shape[0]//2:,[0,1,2,3,5]].to(device)
@@ -247,7 +262,7 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
         # Generator
         # Forward
         g_optimizer.zero_grad()
-        noise = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
+        noise = T.randn(gen_batch.shape[0], generator.noise_dim).to(device)
         gens = generator(gen_batch[:,:generator.s_chan], noise)
         gen_validity = discriminator(T.cat((gen_batch[:,:generator.s_chan], gens), dim=1))
         gen_loss = criterion(gen_validity, T.ones_like(gen_validity))
