@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument('--path', default='default',type=str)
     parser.add_argument('--data', default='',type=str)
     parser.add_argument('--verbose', default=10,type=int)
+    parser.add_argument('--folds', default=0,type=int)
     parser.add_argument('-single', action='store_true')
     parser.add_argument('-genonly', action='store_true')
     parser.add_argument('-lindisc', action='store_true')
@@ -62,27 +63,30 @@ if __name__ == "__main__":
 
 # %%
 class Discriminator(nn.Module):
-    def __init__(self, width, s_chan, a_chan, conv=True, zoomed=True):
+    def __init__(self, width, s_chan, a_chan, conv=True, folds=0):
         super().__init__()
         self.width = width
         self.s_chan = s_chan
         self.a_chan = a_chan
         self.conv = conv
+        if not folds:
+            folds = int(np.log(width/8)/np.log(8))
+        self.enc_width = int(width/(2**folds))
         
         self.reason = nn.Sequential(
-            nn.Linear(16*8*8, 128),
+            nn.Linear(16*self.enc_width**2, 128),
             nn.LeakyReLU(0.1),
             nn.Linear(128,1),
             nn.Sigmoid()
         )
 
         enc_mods = []
-        if width == 16:
+        if folds == 1:
             enc_mods.extend([nn.Conv2d(s_chan+a_chan, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
-        if width == 32:
+        if folds == 2:
             enc_mods.extend([nn.Conv2d(s_chan+a_chan, 8, 4, 2, 1), nn.LeakyReLU(0.1),
                             nn.Conv2d(8, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
-        if width == 64:
+        if folds == 3:
             enc_mods.extend([nn.Conv2d(s_chan+a_chan, 8, 4, 2, 1), nn.LeakyReLU(0.1),
                             nn.Conv2d(8, 16, 4, 2, 1), nn.LeakyReLU(0.1),
                             nn.Conv2d(16, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
@@ -125,24 +129,27 @@ class View(nn.Module):
 
 #%%
 class Generator(nn.Module):
-    def __init__(self, width, noise_dim, s_chan, a_chan, conv=True):
+    def __init__(self, width, noise_dim, s_chan, a_chan, conv=True, folds=0):
         super().__init__()
         self.width = width
         self.noise_dim = noise_dim
         self.s_chan = s_chan
         self.a_chan = a_chan
         self.conv = conv
-        self.enc_width = 8
-        
+        if not folds:
+            folds = int(np.log(width/8)/np.log(8))
+        self.enc_width = int(width/(2**folds))
+        print(self.enc_width)
+
         gen_mods = [
             nn.Linear(noise_dim+16*self.enc_width**2, 1024),
             nn.ReLU(),
             nn.BatchNorm1d(1024),
-            nn.Linear(1024, 8*8*16),
+            nn.Linear(1024, self.enc_width**2*16),
             nn.ReLU(),
-            nn.BatchNorm1d(8*8*16),
-            View((-1, 16, 8, 8))]
-        if width == 64:
+            nn.BatchNorm1d(self.enc_width**2*16),
+            View((-1, 16, self.enc_width, self.enc_width))]
+        if folds==3:
             gen_mods.extend([
                 nn.ConvTranspose2d(16, 8, 4, 2, 1),
                 nn.LeakyReLU(0.1),
@@ -152,26 +159,26 @@ class Generator(nn.Module):
                 nn.BatchNorm2d(8),
                 nn.ConvTranspose2d(8, a_chan, 4, 2, 1),
                 nn.Sigmoid()])
-        if width == 32:
+        if folds==2:
             gen_mods.extend([
                 nn.ConvTranspose2d(16, 8, 4, 2, 1),
                 nn.LeakyReLU(0.1),
                 nn.BatchNorm2d(8),
                 nn.ConvTranspose2d(8, a_chan, 4, 2, 1),
                 nn.Sigmoid()])
-        if width == 16:
+        if folds==1:
             gen_mods.extend([
                 nn.ConvTranspose2d(16, a_chan, 4, 2, 1),
                 nn.Sigmoid()])
         self.conv_model = nn.Sequential(*gen_mods)
 
         enc_mods = []
-        if width == 16:
+        if folds==1:
             enc_mods.extend([nn.Conv2d(s_chan, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
-        if width == 32:
+        if folds==2:
             enc_mods.extend([nn.Conv2d(s_chan, 8, 4, 2, 1), nn.LeakyReLU(0.1),
                             nn.Conv2d(8, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
-        if width == 64:
+        if folds==3:
             enc_mods.extend([nn.Conv2d(s_chan, 8, 4, 2, 1), nn.LeakyReLU(0.1),
                             nn.Conv2d(8, 16, 4, 2, 1), nn.LeakyReLU(0.1),
                             nn.Conv2d(16, 16, 4, 2, 1), nn.LeakyReLU(0.1)])
@@ -353,11 +360,11 @@ def save_models(models, save_path):
 if __name__ == "__main__":
     # Initializing models
     a_chans = A_CHANNELS-int(args.single)-int(args.sequ)
-    generator = Generator(WIDTH, NOISE_DIM, S_CHANNELS, a_chans, conv= not args.lingen).to(device)
-    discriminator = Discriminator(WIDTH, S_CHANNELS, a_chans, conv= not args.lindisc).to(device)
+    generator = Generator(WIDTH, NOISE_DIM, S_CHANNELS, a_chans, conv= not args.lingen, folds=args.folds).to(device)
+    discriminator = Discriminator(WIDTH, S_CHANNELS, a_chans, conv= not args.lindisc, folds=args.folds).to(device)
     if args.sequ:
-        generator2 = Generator(WIDTH, NOISE_DIM, S_CHANNELS+1, a_chans, conv= not args.lingen).to(device)
-        discriminator2 = Discriminator(WIDTH, S_CHANNELS+1, a_chans, conv= not args.lindisc).to(device)
+        generator2 = Generator(WIDTH, NOISE_DIM, S_CHANNELS+1, a_chans, conv= not args.lingen, folds=args.folds).to(device)
+        discriminator2 = Discriminator(WIDTH, S_CHANNELS+1, a_chans, conv= not args.lindisc, folds=args.folds).to(device)
 
     criterion = nn.BCELoss()
     disc_params = chain(discriminator.parameters(), discriminator2.parameters() if args.sequ else [])
