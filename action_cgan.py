@@ -139,7 +139,6 @@ class Generator(nn.Module):
         if not folds:
             folds = int(np.log(width/8)/np.log(8))
         self.enc_width = int(width/(2**folds))
-        print(self.enc_width)
 
         gen_mods = [
             nn.Linear(noise_dim+16*self.enc_width**2, 1024),

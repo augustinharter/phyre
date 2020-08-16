@@ -164,8 +164,26 @@ def pic_to_action_vector(pic, r_fac=3):
     summed = pic.sum()
     X /= pic.shape[0]*summed
     Y /= pic.shape[0]*summed
-    R = np.sqrt(summed)/pic.shape[0]
-    return X.item(), 1-Y.item(), r_fac*R.item()
+    r = np.sqrt(pic.sum()/(3.141592*pic.shape[0]**2))
+    return [X.item(), 1-Y.item(), r_fac*r.item()]
+
+def pic_hist_to_action(pic, r_fac=3):
+    # thresholding
+    pic = pic*(pic>0.2)
+    # columns part of ball
+    cols = [idx for (idx,val) in enumerate(np.sum(pic, axis=0)) if val>2]
+    start, end = min(cols), max(cols)
+    x = (start+end)/2
+    x /= pic.shape[1]
+    # rows part of ball
+    rows = [idx for (idx,val) in enumerate(np.sum(pic, axis=1)) if val>2]
+    start, end = min(rows), max(rows)
+    y = (start+end)/2
+    y /= pic.shape[0]
+    # radius
+    r = np.sqrt(pic.sum()/(3.141592*pic.shape[0]**2))
+    r = 0.1
+    return x, y, r
 
 def scenes_to_channels(X, size=(32,32)):
     x = np.zeros((X.shape[0], 7, size[0], size[1]))

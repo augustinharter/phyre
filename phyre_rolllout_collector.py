@@ -166,8 +166,8 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
     actions = cache.action_array
     #base_path = 'data/fiddeling'
     data = []
-    task_lookup = []
-    print("NUMBER", number_per_task)
+    info = {'tasks':[], 'pos':[], 'action':[]}
+    print("Amount per task", number_per_task)
 
     sim = phyre.initialize_simulator(tasks, 'ball')
     for idx, task in enumerate(tasks):
@@ -220,12 +220,13 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
                         #    pathlib.Path(path_str).mkdir(parents=True, exist_ok=True)
                         #    cv2.imwrite(path_str+f"/{str(i)}.jpg", img[:,:,::-1])
                         
-
-                        return (True, i, pos[0], target_dist)
+                        red_radius = res.featurized_objects.diameters[red_idx]*4
+                        action_at_interaction = np.append(pos[1], red_radius)
+                        return (True, i, pos[0], action_at_interaction, target_dist)
 
                 return (False, 0, (0,0), 0)
 
-            contact, i_step, obj_pos, summed_radii = check_contact(res)
+            contact, i_step, green_pos, red_pos, summed_radii = check_contact(res)
             if  contact:
                 tries = 0
                 n_collected += 1
@@ -235,8 +236,8 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
                 if static:
                     width = static
                 wh = width//2
-                starty = round((obj_pos[1])*256)
-                startx = round(obj_pos[0]*256)
+                starty = round((green_pos[1])*256)
+                startx = round(green_pos[0]*256)
                 step_size = 20
                 # check whether contact happend too early
                 if i_step-step_size < 0:
@@ -263,7 +264,9 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
 
                 # saving extracted scene
                 data.append(size_formatted_scene)
-                task_lookup.append(task)
+                info['tasks'].append(task)
+                info['pos'].append(green_pos)
+                info['action'].append(red_pos)
 
                 if show:
                     print(starty, startx, width)
@@ -287,8 +290,8 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
     os.makedirs(base_path, exist_ok=True)
     with open(f'{base_path}/interactions.pickle', 'wb') as fp:
         pickle.dump(data, fp, protocol=pickle.HIGHEST_PROTOCOL)
-    with open(f'{base_path}/tasklist.pickle', 'wb') as fp:
-        pickle.dump(task_lookup, fp, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(f'{base_path}/info.pickle', 'wb') as fp:
+        pickle.dump(info, fp, protocol=pickle.HIGHEST_PROTOCOL)
 
     print(f"FINISH collecting interactions!")
 
@@ -425,4 +428,4 @@ if __name__ == "__main__":
     template2_tasks = [t for t in all_tasks if t.startswith('00002:')]
     print(template2_tasks)
     #collect_specific_channel_paths(f'./data/template13_action_paths_10x', template13_tasks, 0)
-    collect_interactions(f'./data/template2_interactions/interactions.pickle', template2_tasks, 50, 1, (64,64), show=False, static=256)
+    collect_interactions(f'./data/template2_interactions/64fromcentered128', template2_tasks, 50, 1, (64,64), show=False, static=128)
