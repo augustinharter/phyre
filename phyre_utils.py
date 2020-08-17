@@ -154,7 +154,7 @@ def load_phyre_rollout_data(path, base=True):
                 else:
                     yield(trial_rollout)
     
-def pic_to_action_vector(pic, r_fac=3):
+def pic_to_action_vector(pic, r_fac=1):
     X, Y = 0, 0
     for y in range(pic.shape[0]):
         for x in range(pic.shape[1]):

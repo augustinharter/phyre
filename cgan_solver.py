@@ -120,6 +120,12 @@ def solve(tasks, generator, save_images=False, force_collect=False, static=256, 
     print("mean r error:", np.mean(error[:,2]), 'mean r abs error:', np.mean(np.abs(error[:,2])))
 
 class CganInteractionSolver():
+    """
+    USAGE:
+    solver = CganInteractionSolver("path/to/model")
+    solver.solve_interactions(values_batch, scenes_batch)
+    """
+
     def __init__(self, model_path:str = "./saves/action_cgan/3conv64-128/generator.pt", width:int = 64):
         self.width = width
 
@@ -137,8 +143,9 @@ class CganInteractionSolver():
         # Loading model:
         self.generator = Generator(width, 100, in_channels, out_channels, folds=n_encoder_layers-1)
         self.generator.load_state_dict(state_dict)
+        self.generator.eval()
 
-    def solve_interactions(self, values_batch, scenes_batch, same_noise=False):
+    def solve_interactions(self, values_batch, scenes_batch, same_noise=False, show=False):
         """
         Inputs:
 
@@ -162,6 +169,8 @@ class CganInteractionSolver():
         1.0 - 100% chance that the action [x, y, r] will  lead to [green_ball_x_t+1, green_ball_y_t+1]
         """
 
+        values_batch = np.array(values_batch)
+        print("values shape:", values_batch.shape, "scenes shape:", scenes_batch.shape)
         channels = T.zeros(len(values_batch), 4, self.width, self.width)
         for i in range(len(values_batch)):
             values = values_batch[i]
@@ -174,20 +183,38 @@ class CganInteractionSolver():
             xminus, x, xplus = rel_normed_xcoords
             yminus, y, yplus = rel_normed_ycoords
 
-            channels[i,0] = self.draw_ball(r, xminus, yminus)
-            channels[i,1] = self.draw_ball(r, x, y)
-            channels[i,2] = self.draw_ball(r, xplus, yplus)
-            channels[i,3] = T.tensor(np.max(scenes_batch[i,:].numpy(), axis=0))
+            # Pad, center, zoom and flip scene channel:
+            scene = np.max(scenes_batch[i,:], axis=0)
+            width = 128
+            wh = width//2
+            startx = int(256*(coords[2]))
+            starty = int(256*(1-coords[3]))
+            padded_scene = np.pad(scene, ((wh,wh), (wh,wh)))
+            centered_scene = padded_scene[starty:starty+width, startx:startx+width]
+            zoomed_scene = cv2.resize(centered_scene, (64,64))
+            flipped_scene = np.flip(zoomed_scene, axis=0)
+
+            channels[i,0] = self.draw_ball(xminus, yminus, r)
+            channels[i,1] = self.draw_ball(x, y, r)
+            channels[i,2] = self.draw_ball(xplus, yplus, r)
+            channels[i,3] = T.tensor(flipped_scene.copy())
         
+        # Generating Predictions
         noise = T.randn(len(values_batch), self.generator.noise_dim)
         if same_noise:
             noise = T.randn(self.generator.noise_dim).repeat((len(values_batch),1)) 
             # Noise makes a big difference, this is the same noise for the whole batch 
         with T.no_grad():
             predictions = self.generator(channels, noise)
-        images = T.cat((channels, predictions), dim=1)
-        plt.imshow(images.reshape(-1, 64))
-        plt.show()
+        if show:
+            images = (T.sum(T.cat((channels, predictions), dim=1), dim=1)>0.01).float()
+            plt.imshow(T.sum(channels, dim=1)[0])
+            plt.show()
+            plt.imshow(predictions[0,0])
+            plt.show()
+            plt.imshow(images[0])
+            plt.show()
+
         actions = []
         confidence = []
         for i, pic in enumerate(predictions):
@@ -209,9 +236,9 @@ class CganInteractionSolver():
         
         return actions, confidence
     
-    def draw_ball(self, r, x, y):
+    def draw_ball(self, x, y, r):
         x = int(self.width*x)
-        y = int(self.width*y)
+        y = int(self.width*(1-y))
         r = self.width*r
         X = T.arange(self.width).repeat((self.width, 1)).float()
         Y = T.arange(self.width).repeat((self.width, 1)).transpose(0, 1).float()
@@ -219,18 +246,56 @@ class CganInteractionSolver():
         Y -= y # Y Distance
         dist = (X.pow(2)+Y.pow(2)).pow(0.5)
         return (dist<r).float()
-        
-        
+            
         
 
 #%%
 if __name__ == "__main__":
+    # USAGE:
+    # solver = CganInteractionSolver()
+    # solver.solve_interactions(values_batch, scenes_batch)
+
+    # TESTING
+    # Setup
     solver = CganInteractionSolver("./saves/action_cgan/3conv64-128/generator.pt", width = 64)
-    scenes_batch = T.zeros(3, 7, 64, 64)
-    scenes_batch[:, 4, 60, :] = 1
-    values_batch = [[0.2, 0.3, 0.3, 0.3, 0.35, 0.35, 0.4]]*3
-    print(solver.solve_interactions(values_batch, scenes_batch))
-    exit(0)
+    data_path = './data/cgan_solver'
+    if not os.path.exists(data_path+'/interactions.pickle'):
+        os.makedirs(data_path, exist_ok=True)
+        wid = generator.width
+        print("Collecting Data")
+        collect_interactions(data_path, tasks, 10, stride=1, size=(wid,wid), static=static)
+    with open(data_path+'/interactions.pickle', 'rb') as fs:
+        X = T.tensor(pickle.load(fs), dtype=T.float)
+    with open(data_path+'/info.pickle', 'rb') as fs:
+        info = pickle.load(fs)
+        tasklist = info['tasks']
+        positions = info['pos']
+        orig_actions = info['action']
+    print('loaded dataset with shape:', X.shape)
+    data_set = T.utils.data.TensorDataset(X)
+    data_loader = T.utils.data.DataLoader(data_set, batch_size=4, shuffle=True)
+
+    # Testing Loop
+    for i, (X,) in enumerate(data_loader):
+        scenes_batch = np.flip(np.array([np.pad(cv2.resize(scene.numpy(), (128,128)), ((64,64), (64,64))) for scene in X[:,3]]), axis = 1)[:,None]
+        print('real sum', T.sum(X[0,0]))
+        minus = pic_to_action_vector(X[0,0])
+        zero = pic_to_action_vector(X[0,1])
+        plus = pic_to_action_vector(X[0,2])
+        print('drawn sum', T.sum(solver.draw_ball(*minus)))
+        print(minus, zero, plus)
+        # method expects diameter in full scene == radius in half scene
+        values_batch = np.array([[zero[2], minus[0], minus[1], zero[0], zero[1], plus[0], plus[1]]])
+        values_batch[1:] *= 0.5
+        plt.imshow(solver.draw_ball(*pic_to_action_vector(X[0,2])))
+        plt.show()
+        plt.imshow(X[0,2])
+        plt.show()
+        plt.imshow(X[0,2]-solver.draw_ball(*pic_to_action_vector(X[0,2])))
+        plt.show()
+        # solving
+        print(solver.solve_interactions(values_batch, scenes_batch, show = True))
+
     wid = 64
     generator = Generator(wid, 100, 4, 1, folds=3)
     generator.load_state_dict(T.load("./saves/action_cgan/3conv64-128/generator.pt", map_location=T.device('cpu')))
