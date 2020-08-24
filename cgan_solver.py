@@ -126,24 +126,29 @@ class CganInteractionSolver():
     solver.solve_interactions(values_batch, scenes_batch)
     """
 
-    def __init__(self, model_path:str = "./saves/action_cgan/3conv64-128/generator.pt", width:int = 64):
+    def __init__(self, model_path:str = "./saves/action_cgan/3conv64-128", width:int = 64):
         self.width = width
+        self.print_count = 0
 
         # Loading state_dict
-        state_dict = T.load(model_path, map_location=T.device('cpu'))
+        gen_state_dict = T.load(model_path+'/generator.pt', map_location=T.device('cpu'))
+        disc_state_dict = T.load(model_path+'/discriminator.pt', map_location=T.device('cpu'))
 
         # Extracting Model parameters from state_dict
-        in_channels = state_dict['encoder.0.weight'].shape[1]
-        layer_numbers = set(int(key[11:13].strip('.')) for key in state_dict if key.startswith('conv_model'))
+        in_channels = gen_state_dict['encoder.0.weight'].shape[1]
+        layer_numbers = set(int(key[11:13].strip('.')) for key in gen_state_dict if key.startswith('conv_model'))
         last_layer = max(layer_numbers)
-        out_channels = state_dict[f'conv_model.{last_layer}.weight'].shape[1]
-        n_encoder_layers = len(set(int(key[8:10].strip('.')) for key in state_dict if key.startswith('encoder')))
+        out_channels = gen_state_dict[f'conv_model.{last_layer}.weight'].shape[1]
+        n_encoder_layers = len(set(int(key[8:10].strip('.')) for key in gen_state_dict if key.startswith('encoder')))
         print(f'Loaded model with: width {width}, in_chs {in_channels}, out_chs {out_channels}, folds {n_encoder_layers-1}')
 
         # Loading model:
         self.generator = Generator(width, 100, in_channels, out_channels, folds=n_encoder_layers-1)
-        self.generator.load_state_dict(state_dict)
+        self.generator.load_state_dict(gen_state_dict)
         self.generator.eval()
+        self.discriminator = Discriminator(width, in_channels, out_channels, folds=n_encoder_layers-1)
+        self.discriminator.load_state_dict(disc_state_dict)
+        self.discriminator.eval()
 
     def solve_interactions(self, values_batch, scenes_batch, same_noise=False, show=False):
         """
@@ -206,6 +211,7 @@ class CganInteractionSolver():
             # Noise makes a big difference, this is the same noise for the whole batch 
         with T.no_grad():
             predictions = self.generator(channels, noise)
+            confidence = self.discriminator(T.cat((channels,predictions), dim=1))
         if show:
             images = (T.sum(T.cat((channels, predictions), dim=1), dim=1)>0.01).float()
             plt.imshow(T.sum(channels, dim=1)[0])
@@ -214,9 +220,20 @@ class CganInteractionSolver():
             plt.show()
             plt.imshow(images[0])
             plt.show()
+        else:
+            path = 'result/cgan_solver/tests/'
+            os.makedirs(path, exist_ok=True)
+            images = (T.sum(T.cat((channels, predictions), dim=1), dim=1)>0.01).float()
+            for j in range(len(values_batch)):
+                plt.imsave(path+f'{self.print_count}_{j}_inputs.png', T.sum(channels, dim=1)[j])
+                plt.imsave(path+f'{self.print_count}_{j}_outputs.png', predictions[j,0])
+                plt.imsave(path+f'{self.print_count}_{j}_combined.png', images[j])
+                with open(path+f'{self.print_count}_{j}_confidence_{confidence[j,0]}.txt', 'w') as fp:
+                    fp.write(str(confidence[j,0]))
+            self.print_count +=1
+            
 
         actions = []
-        confidence = []
         for i, pic in enumerate(predictions):
             # PROCESS ACTION
             action = np.array(pic_to_action_vector(pic[0]))
@@ -232,7 +249,6 @@ class CganInteractionSolver():
             action[:2] += pos
 
             actions.append(action)
-            confidence.append(1) # TODO Calculate real Confidence Value
         
         return actions, confidence
     
@@ -257,20 +273,32 @@ if __name__ == "__main__":
 
     # TESTING
     # Setup
-    solver = CganInteractionSolver("./saves/action_cgan/3conv64-128/generator.pt", width = 64)
+    SHOW = False
+    # Collecting Tasks
+    fold_id = 0
+    eval_setup = 'ball_within_template'
+    train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+    all_tasks = train_ids+dev_ids+test_ids
+    template13_tasks = [t for t in all_tasks if t.startswith('00013:')]
+    template2_tasks = [t for t in all_tasks if t.startswith('00002:')]
+
+    # Solver Init
+    solver = CganInteractionSolver("./saves/action_cgan/3conv64-128", width = 64)
+
+    # Collecting Interaction data
     data_path = './data/cgan_solver'
     if not os.path.exists(data_path+'/interactions.pickle'):
         os.makedirs(data_path, exist_ok=True)
-        wid = generator.width
+        wid = solver.generator.width
         print("Collecting Data")
-        collect_interactions(data_path, tasks, 10, stride=1, size=(wid,wid), static=static)
+        collect_interactions(data_path, template2_tasks, 10, stride=1, size=(wid,wid), static=128)
     with open(data_path+'/interactions.pickle', 'rb') as fs:
         X = T.tensor(pickle.load(fs), dtype=T.float)
     with open(data_path+'/info.pickle', 'rb') as fs:
         info = pickle.load(fs)
-        tasklist = info['tasks']
-        positions = info['pos']
-        orig_actions = info['action']
+    tasklist = info['tasks']
+    positions = info['pos']
+    orig_actions = info['action']
     print('loaded dataset with shape:', X.shape)
     data_set = T.utils.data.TensorDataset(X)
     data_loader = T.utils.data.DataLoader(data_set, batch_size=4, shuffle=True)
@@ -287,24 +315,25 @@ if __name__ == "__main__":
         # method expects diameter in full scene == radius in half scene
         values_batch = np.array([[zero[2], minus[0], minus[1], zero[0], zero[1], plus[0], plus[1]]])
         values_batch[1:] *= 0.5
-        plt.imshow(solver.draw_ball(*pic_to_action_vector(X[0,2])))
-        plt.show()
-        plt.imshow(X[0,2])
-        plt.show()
-        plt.imshow(X[0,2]-solver.draw_ball(*pic_to_action_vector(X[0,2])))
-        plt.show()
+        if SHOW:
+            plt.imshow(solver.draw_ball(*pic_to_action_vector(X[0,2])))
+            plt.show()
+            plt.imshow(X[0,2])
+            plt.show()
+            plt.imshow(X[0,2]-solver.draw_ball(*pic_to_action_vector(X[0,2])))
+            plt.show()
+        else:
+            path = 'result/cgan_solver/tests/'
+            os.makedirs(path, exist_ok=True)
+            plt.imsave(path+'drawn_ball.png', solver.draw_ball(*pic_to_action_vector(X[0,2])))
+            plt.imsave(path+'orig_ball.png', X[0,2])
+            plt.imsave(path+'drawn_orig_difference.png', X[0,2]-solver.draw_ball(*pic_to_action_vector(X[0,2])))
         # solving
-        print(solver.solve_interactions(values_batch, scenes_batch, show = True))
+        actions, conf = solver.solve_interactions(values_batch, scenes_batch, show = SHOW)
+        print('actions:', actions, 'confidence:', conf)
 
     wid = 64
     generator = Generator(wid, 100, 4, 1, folds=3)
-    generator.load_state_dict(T.load("./saves/action_cgan/3conv64-128/generator.pt", map_location=T.device('cpu')))
-
-    fold_id = 0
-    eval_setup = 'ball_within_template'
-    train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
-    all_tasks = train_ids+dev_ids+test_ids
-    template13_tasks = [t for t in all_tasks if t.startswith('00013:')]
-    template2_tasks = [t for t in all_tasks if t.startswith('00002:')]
+    generator.load_state_dict(T.load("./saves/action_cgan/3conv64-128", map_location=T.device('cpu')))
 
     solve(template2_tasks, generator, force_collect=False, static=128, show=False)

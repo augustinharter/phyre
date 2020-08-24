@@ -67,7 +67,7 @@ def collect_solving_observations(path, tasks, n_per_task = 10, collect_base=True
                 tries += 1
                 action = actions[cache.load_simulation_states(task)==1]
                 if len(action)==0:
-                    print("no solution action in cache at task", task)
+                    print("WARNING no solution action in cache at task", task)
                     action = [np.random.rand(3)]
                 action = random.choice(action)
                 res = sim.simulate_action(idx, action,
@@ -106,6 +106,94 @@ def collect_solving_observations(path, tasks, n_per_task = 10, collect_base=True
                 print(f"skipping {task}: base", end = end_char)
 
     print("FINISH collecting rollouts!")
+
+def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, stride=10, size=(32,32)):
+    end_char = '\n'
+    tries = 0
+    max_tries = 100
+    base_path = path
+    number_to_solve = n_per_task
+    cache = phyre.get_default_100k_cache('ball')
+    actions = cache.action_array
+
+    path_idxs = [1,2,0]
+    channels = range(1,7)
+    data = []
+    lib_dict = dict()
+
+    sim = phyre.initialize_simulator(tasks, 'ball')
+    for task_idx, task in enumerate(tasks):
+        # COLLECT SOLVES
+        solved = 0
+        while solved < number_to_solve:
+            print(f"collecting {task}: trial {solved} with {tries+1} tries", end = end_char)
+            tries += 1
+            action = actions[cache.load_simulation_states(task)==1]
+            if len(action)==0:
+                print("WARNING no solution action in cache at task", task)
+                action = [np.random.rand(3)]
+            action = random.choice(action)
+            res = sim.simulate_action(task_idx, action,
+                need_featurized_objects=True, stride=stride)
+
+            # IF SOLVED PROCESS ROLLOUT
+            if res.status.is_solved():
+                tries = 0
+                solved += 1
+                
+                # FORMAT AND EXTRACT DATA
+                paths = np.zeros((len(path_idxs), len(res.images), size[0], size[1]))
+                alpha, gamma = 1, 1
+                for i, image in enumerate(res.images):
+                    # extract color codings from channels
+                    chans = np.array([(image==ch).astype(float) for ch in channels])
+
+                    # at first frame extract init scene
+                    if not i:
+                        init_scene = np.array([(cv2.resize(chans[ch], size, cv2.INTER_MAX)>0).astype(float) for ch in range(len(channels))])
+
+                    # add path_idxs channels to paths
+                    for path_i, idx in enumerate(path_idxs):
+                        paths[path_i, i] = alpha*(cv2.resize(chans[idx], size, cv2.INTER_MAX)>0).astype(float)
+                    alpha *= gamma
+
+                # COLLECT BASE
+                if collect_base:
+                    print(f"collecting {task}: base", end=end_char)
+                    # 1000 tries make sure one action is valid
+                    for _ in range(1000):
+                        action = sim.sample()
+                        action[2] = 0.001
+                        res = sim.simulate_action(task_idx, action, 
+                            need_featurized_objects=False, stride=stride)
+                        if not res.status.is_invalid():
+                            break
+                    base_frames = np.array([cv2.resize((scene==2).astype(float), size, cv2.INTER_MAX) for scene in res.images])[None]
+
+                # combine channels
+                # flip y axis and concat init scene with paths and base
+                paths = np.flip(np.max(paths, axis=1).astype(float), axis=1)
+                base = np.flip(np.max(base_frames, axis=1).astype(float), axis=1)
+                init_scene = np.flip(init_scene, axis=1)
+                combined = np.concatenate([init_scene, base, paths])
+
+                # append data set and lib_dict
+                data.append(combined)
+                if task in lib_dict:
+                    lib_dict[task].append(len(data)-1)
+                else:
+                    lib_dict[task] = [len(data)-1]
+
+            if tries>max_tries:
+                break
+    
+    os.makedirs(path, exist_ok=True)
+    with open(path+'/data.pickle', 'wb') as fp:
+        pickle.dump(data, fp)
+    with open(path+'/index.pickle', 'wb') as fp:
+        pickle.dump(lib_dict, fp)
+
+    print("FINISH collecting solving dataset!")
 
 def collect_specific_channel_paths(path, tasks, channel, stride=10, size=(256,256)):
     end_char = '\r'
