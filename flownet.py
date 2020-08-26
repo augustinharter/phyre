@@ -664,6 +664,7 @@ if __name__ == "__main__" and args.train:
 
 # %%
 if __name__ == "__main__" and args.train:
+    os.makedirs(f"saves/flownet/", exist_ok=True)
     T.save(tar_net.state_dict(), f"saves/flownet/flownet_tar_{args.path_id}.pt")
     T.save(act_net.state_dict(), f"saves/flownet/flownet_act_{args.path_id}.pt")
     T.save(ext_net.state_dict(), f"saves/flownet/flownet_ext_{args.path_id}.pt")
