@@ -12,6 +12,7 @@ from phyre_utils import *
 from itertools import chain
 import argparse
 import os
+import random
 #%%
 class SpatialConv(nn.Module):
     def __init__(self, conv, direction, inplace=True, trans=False):
@@ -100,7 +101,7 @@ class SpatialConv(nn.Module):
             return Y
 
 class SequentialConv(nn.Module):
-    def __init__(self, conv, direction, inplace=True):
+    def __init__(self, conv, direction, inplace=True, trans=False):
         super().__init__()
         self.inplace = inplace
         self.conv = conv
@@ -113,20 +114,20 @@ class SequentialConv(nn.Module):
         direction = self.direction
         if direction=="right":
             sideways = True
-            end = X.shape[3]-1
+            end = X.shape[3]
             pos = 0
             add = 1
         elif direction=="left":
             sideways = True
-            end = 0
+            end = -1
             pos = X.shape[3]-1
             add = -1
         elif direction=="up":
-            end = 0
+            end = -1
             pos = X.shape[2]-1
             add = -1
         elif direction=="down":
-            end = X.shape[2]-1
+            end = X.shape[2]
             pos = 0
             add = 1
         else:
@@ -135,20 +136,26 @@ class SequentialConv(nn.Module):
 
         #ORIGINAL "INPLACE" CONCEPT from paper
         if self.inplace:
-            kd = self.conv.kernel_size[0]-1
+            kd = self.conv.kernel_size[1]-1 if sideways else self.conv.kernel_size[0]-1
+            #print(self.conv.kernel_size)
             pos += kd*add
             X = X.clone()
             while pos!=end:
+                #print(pos)
                 if sideways:
                     if add<0:
+                        #print(X[:,:,:,pos].shape, X[:,:,:,pos:pos+kd+1].shape, self.conv(X[:,:,:,pos:pos+kd+1]).shape)
                         X[:,:,:,pos] += T.tanh(self.conv(X[:,:,:,pos:pos+kd+1])[:,:,0])
                     else:
+                        #print(X[:,:,:,pos].shape, X[:,:,:,pos-kd:pos+1].shape, self.conv(X[:,:,:,pos-kd:pos+1]).shape)
                         X[:,:,:,pos] += T.tanh(self.conv(X[:,:,:,pos-kd:pos+1])[:,:,0])
 
                 else:
                     if add<0:
+                        #print(X[:,:,pos,:].shape, X[:,:,pos:pos+kd+1,:].shape, self.conv(X[:,:,pos:pos+kd+1,:]).shape)
                         X[:,:,pos,:] += T.tanh(self.conv(X[:,:,pos:pos+kd+1,:])[:,:,0])
                     else:
+                        #print(X[:,:,pos,:].shape, X[:,:,pos-kd:pos+1,:].shape, self.conv(X[:,:,pos-kd:pos+1,:]).shape)
                         X[:,:,pos,:] += T.tanh(self.conv(X[:,:,pos-kd:pos+1,:])[:,:,0])
 
                 pos += add
@@ -238,16 +245,17 @@ class FlowNet(nn.Module):
         #self.feature_dims = feature_dims
         #self.embed_dims = embed_dims
         #self.final_conv_width = ((int(self.feature_dims**0.5)//4)-2)
-        conv_fn = (lambda: nn.Conv2d(chs, chs, (2,5), 1, (0, 2))) if sequ else (lambda: nn.Conv1d(chs, chs, 5, 1, 2))
+        vertical_conv_fn = (lambda: nn.Conv2d(chs, chs, (2,5), 1, (0, 2))) if sequ else (lambda: nn.Conv1d(chs, chs, 5, 1, 2))
+        horizontal_conv_fn = (lambda: nn.Conv2d(chs, chs, (5,2), 1, (2, 0))) if sequ else (lambda: nn.Conv1d(chs, chs, 5, 1, 2))
         flow_model = SequentialConv if sequ else SpatialConv
-        self.r1 = flow_model(conv_fn(), "right", inplace=True, trans=trans)
-        self.l1 =  flow_model(conv_fn(), "left", inplace=True, trans=trans)
-        self.u1 =    flow_model(conv_fn(), "up", inplace=True, trans=trans)
-        self.d1 =  flow_model(conv_fn(), "down", inplace=True, trans=trans)
-        self.r2 = flow_model(conv_fn(), "right", inplace=True, trans=trans)
-        self.l2 =  flow_model(conv_fn(), "left", inplace=True, trans=trans)
-        self.u2 =    flow_model(conv_fn(), "up", inplace=True, trans=trans)
-        self.d2 =  flow_model(conv_fn(), "down", inplace=True, trans=trans)
+        self.r1 = flow_model(horizontal_conv_fn(), "right", inplace=True, trans=trans)
+        self.l1 =  flow_model(horizontal_conv_fn(), "left", inplace=True, trans=trans)
+        self.u1 =    flow_model(vertical_conv_fn(), "up", inplace=True, trans=trans)
+        self.d1 =  flow_model(vertical_conv_fn(), "down", inplace=True, trans=trans)
+        self.r2 = flow_model(horizontal_conv_fn(), "right", inplace=True, trans=trans)
+        self.l2 =  flow_model(horizontal_conv_fn(), "left", inplace=True, trans=trans)
+        self.u2 =    flow_model(vertical_conv_fn(), "up", inplace=True, trans=trans)
+        self.d2 =  flow_model(vertical_conv_fn(), "down", inplace=True, trans=trans)
         self.init_conv = nn.Sequential(
             nn.Conv2d(in_dim, chs, 3, 1, 1),
             nn.Tanh())
@@ -291,21 +299,22 @@ class FlowNet(nn.Module):
         return X
 
 class UpFlowNet(nn.Module):
-    def __init__(self, in_dim, chs, sequ=False):
+    def __init__(self, in_dim, chs, sequ=False, trans=False):
         super().__init__()
         #self.feature_dims = feature_dims
         #self.embed_dims = embed_dims
         #self.final_conv_width = ((int(self.feature_dims**0.5)//4)-2)
-        conv_fn = (lambda: nn.Conv2d(chs, chs, (2,5), 1, (0,2))) if sequ else (lambda: nn.Conv1d(chs, chs, 5, 1, 2))
+        vertical_conv_fn = (lambda: nn.Conv2d(chs, chs, (2,5), 1, (0, 2))) if sequ else (lambda: nn.Conv1d(chs, chs, 5, 1, 2))
+        horizontal_conv_fn = (lambda: nn.Conv2d(chs, chs, (5,2), 1, (2, 0))) if sequ else (lambda: nn.Conv1d(chs, chs, 5, 1, 2))
         flow_model = SequentialConv if sequ else SpatialConv
-        self.r1 = flow_model(conv_fn(), "right", inplace=True)
-        self.l1 =  flow_model(conv_fn(), "left", inplace=True)
-        self.u1 =    flow_model(conv_fn(), "up", inplace=True)
-        self.d1 =  flow_model(conv_fn(), "down", inplace=True)
-        self.r2 = flow_model(conv_fn(), "right", inplace=True)
-        self.l2 =  flow_model(conv_fn(), "left", inplace=True)
-        self.u2 =    flow_model(conv_fn(), "up", inplace=True)
-        self.d2 =  flow_model(conv_fn(), "down", inplace=True)
+        self.r1 = flow_model(horizontal_conv_fn(), "right", inplace=True, trans=trans)
+        self.l1 =  flow_model(horizontal_conv_fn(), "left", inplace=True, trans=trans)
+        self.u1 =    flow_model(vertical_conv_fn(), "up", inplace=True, trans=trans)
+        self.d1 =  flow_model(vertical_conv_fn(), "down", inplace=True, trans=trans)
+        self.r2 = flow_model(horizontal_conv_fn(), "right", inplace=True, trans=trans)
+        self.l2 =  flow_model(horizontal_conv_fn(), "left", inplace=True, trans=trans)
+        self.u2 =    flow_model(vertical_conv_fn(), "up", inplace=True, trans=trans)
+        self.d2 =  flow_model(vertical_conv_fn(), "down", inplace=True, trans=trans)
         self.init_conv = nn.Sequential(
             nn.Conv2d(in_dim, chs, 3, 1, 1),
             nn.Tanh())
@@ -421,19 +430,26 @@ if __name__ == "__main__":
     parser.add_argument('-eval', action='store_true')
     parser.add_argument('-test', action='store_true')
     parser.add_argument('-gan', action='store_true')
-    parser.add_argument('-GT', action='store_true')
+    parser.add_argument('--train_mode', default='GT', type=str, choices=['GT', 'MIX', 'CONS', 'COMB', 'END'])
     parser.add_argument('--epochs', default=10, type=int)
+    parser.add_argument('--width', default=32, type=int)
+    parser.add_argument('--visevery', default=10, type=int)
     args = parser.parse_args()
+    print(args)
 #%%
 if __name__ == "__main__":
     fold_id = 0
     eval_setup = 'ball_within_template'
     train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
     if args.train:
-        train_dataloader, index = make_mono_dataset(f"data/phyre_fold_{fold_id}_train_32", size=(32,32), tasks=train_ids[:])
+        train_dataloader, index = make_mono_dataset(f"data/phyre_fold_{fold_id}_train_{args.width}", size=(args.width,args.width), tasks=train_ids[:])
+        os.makedirs(f'result/flownet/training/{args.path_id}', exist_ok=True)
+        with open(f'result/flownet/training/{args.path_id}/namespace.txt', 'w') as handle:
+            handle.write(str(args))
 #%%
 if __name__ == "__main__":
     tar_net = FlowNet(5, 16, sequ=args.sequ, trans=args.trans)
+    base_net = FlowNet(5, 16, sequ=args.sequ, trans=args.trans)
     act_net = FlowNet(7, 16, sequ=args.sequ, trans=args.trans)
     ext_net = UpFlowNet(7, 16, sequ=args.sequ)
     discr = Discriminator(8)
@@ -444,7 +460,8 @@ if __name__ == "__main__" and args.train:
     #opti3 = T.optim.Adam(ext_net.parameters(recurse=True), lr=1e-3)
     nets_opti = T.optim.Adam(chain(tar_net.parameters(recurse=True), 
                             act_net.parameters(recurse=True),
-                            ext_net.parameters(recurse=True)), 
+                            ext_net.parameters(recurse=True),
+                            base_net.parameters(recurse=True)), 
                         lr=3e-3)
     discr_opti = T.optim.Adam(discr.parameters(), lr=3e-3)
 #%%
@@ -519,29 +536,41 @@ def train3():
                     T.ones(32,1), B[0,0].detach()), dim=1))
                 plt.show()
 
-def train_supervised(epochs:int, tar_net:FlowNet, act_net:FlowNet, ext_net:UpFlowNet, 
-    data_loader:T.utils.data.DataLoader, opti: T.optim.Adam, use_GT=True):
+def train_supervised(epochs:int, base_net:FlowNet, tar_net:FlowNet, act_net:FlowNet, ext_net:UpFlowNet,
+    data_loader:T.utils.data.DataLoader, opti: T.optim.Adam, train_mode='GT'):
     for epoch in range(epochs):
         for i, (X,) in enumerate(data_loader):
             # Prepare Data
             action_balls = X[:,0]
             init_scenes = X[:,1:6]
-            target_paths = X[:,6]
-            action_paths = X[:,8]
-            goal_paths = X[:,7]
-            base_paths = X[:,9]
+            base_paths = X[:,6]
+            target_paths = X[:,7]
+            goal_paths = X[:,8]
+            action_paths = X[:,9]
 
             # Optional visiualization of batch data
             #print(init_scenes.shape, target_paths.shape, action_paths.shape, base_paths.shape)
             #vis_batch(X, f'data/flownet', f'{epoch}_{i}')
 
+            if train_mode=='MIX':
+                modus = random.choice(['GT', 'COMB', 'CONS', 'END'])
+            else:
+                modus = train_mode
+
             # Forward Pass
             target_pred = tar_net(init_scenes)
-            if use_GT:
+            base_pred = base_net(init_scenes)
+            if modus=='GT':
                 action_pred = act_net(T.cat((init_scenes, target_paths[:,None], base_paths[:,None]), dim=1))
                 ball_pred = ext_net(T.cat((init_scenes, target_paths[:,None], action_paths[:,None]), dim=1))
-            else:
-                action_pred = act_net(T.cat((init_scenes, target_pred, base_paths[:,None]), dim=1))
+            elif modus=='CONS':
+                action_pred = act_net(T.cat((init_scenes, target_pred.detach(), base_pred.detach()), dim=1))
+                ball_pred = ext_net(T.cat((init_scenes, target_pred.detach(), action_pred.detach()), dim=1))
+            elif modus=='COMB':
+                action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
+                ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
+            elif modus=='END':
+                action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
                 ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
             
             if not i%10:
@@ -554,7 +583,11 @@ def train_supervised(epochs:int, tar_net:FlowNet, act_net:FlowNet, ext_net:UpFlo
             tar_loss = F.binary_cross_entropy(target_pred, target_paths[:,None])
             act_loss = F.binary_cross_entropy(action_pred, action_paths[:,None])
             ball_loss = F.binary_cross_entropy(ball_pred, action_balls[:,None])
-            loss = ball_loss + tar_loss + act_loss
+            base_loss = F.binary_cross_entropy(base_pred, base_paths[:,None])
+            if modus=='END':
+                loss = ball_loss
+            else:
+                loss = ball_loss + tar_loss + act_loss + base_loss
             print(epoch, i, loss.item())
 
             # Backward Pass
@@ -625,21 +658,26 @@ if __name__ == "__main__" and args.train:
     #train2()
     #model2.load_state_dict(T.load("saves/imaginet2-c16-all.pt"))
     if args.gan:
-        train_as_gan(args.epochs, tar_net, act_net, ext_net, discr, train_dataloader, nets_opti, discr_opti, use_GT=args.GT)
+        train_as_gan(args.epochs, tar_net, act_net, ext_net, discr, train_dataloader, nets_opti, discr_opti, train_mode=args.train_mode)
     else:
-        train_supervised(args.epochs, tar_net, act_net, ext_net, train_dataloader, nets_opti, use_GT=args.GT)
+        train_supervised(args.epochs, base_net, tar_net, act_net, ext_net, train_dataloader, nets_opti, train_mode=args.train_mode)
 
 # %%
 if __name__ == "__main__" and args.train:
-    T.save(tar_net.state_dict(), f"saves/flownet_tar_{args.path_id}.pt")
-    T.save(act_net.state_dict(), f"saves/flownet_act_{args.path_id}.pt")
-    T.save(ext_net.state_dict(), f"saves/flownet_ext_{args.path_id}.pt")
+    T.save(tar_net.state_dict(), f"saves/flownet/flownet_tar_{args.path_id}.pt")
+    T.save(act_net.state_dict(), f"saves/flownet/flownet_act_{args.path_id}.pt")
+    T.save(ext_net.state_dict(), f"saves/flownet/flownet_ext_{args.path_id}.pt")
+    T.save(base_net.state_dict(), f"saves/flownet/flownet_base_{args.path_id}.pt")
     if args.gan:
         T.save(discr.state_dict(), f"saves/flownet_discr_{args.path_id}.pt")
 
 #%%
 def inspect(tar_net:FlowNet, act_net:FlowNet, ext_net:UpFlowNet, 
     data_loader:T.utils.data.DataLoader):
+    os.makedirs(f'result/flownet/testing/{args.path_id}', exist_ok=True)
+    with open(f'result/flownet/testing/{args.path_id}/namespace.txt', 'w') as handle:
+        handle.write(str(args))
+
     for i, (X,) in enumerate(data_loader):
         init_scenes = X[:,1:6]
         target_paths = X[:,6]
@@ -653,7 +691,6 @@ def inspect(tar_net:FlowNet, act_net:FlowNet, ext_net:UpFlowNet,
             action_pred = act_net(T.cat((init_scenes, target_pred, base_paths[:,None]), dim=1))
             ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
 
-        os.makedirs(f'result/flownet/testing/{args.path_id}', exist_ok=True)
         print_batch = T.cat((X, target_pred, action_pred, ball_pred), dim=1).detach()
         vis_batch(print_batch, f'result/flownet/testing/{args.path_id}', 'batch_{i}')
 
