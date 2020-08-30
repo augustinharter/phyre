@@ -383,6 +383,81 @@ class Discriminator(nn.Module):
     def forward(self, X):
         return self.model(X)
 
+class Pyramid(nn.Module):
+    def __init__(self, in_dim, chs):
+        super().__init__()
+        """
+        self.model = nn.Sequential(
+            nn.Conv2d(in_dim, 8, 4, 2, 1),
+            nn.ReLU(),
+            nn.Conv2d(8, 16, 4, 2, 1),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, 4, 2, 1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 4, 2, 1),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, 4, 2, 1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(32, 16, 4, 2, 1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(16, 8, 4, 2, 1),
+            nn.ReLU(),
+            nn.ConvTranspose2d(8, chs, 4, 2, 1),
+            nn.Sigmoid()
+        )
+        """
+        
+        wid = 32
+        folds = range(1, int(np.math.log2(wid)))
+        acti = nn.ReLU
+        convs = [nn.Conv2d(2**(2+i), 2**(3+i), 4, 2, 1) for i in folds]
+        encoder = [nn.Conv2d(in_dim, 8, 4, 2, 1), acti()] + [acti() if i%2 else convs[i//2] for i in range(2*len(folds))]
+        trans_convs = [nn.ConvTranspose2d(2**(3+i), 2**(2+i), 4, 2, 1) for i in reversed(folds)]
+        decoder = [acti() if i%2 else trans_convs[i//2] for i in range(2*len(folds))] + [nn.ConvTranspose2d(8, chs, 4, 2, 1), nn.Sigmoid()]
+        modules = encoder+decoder
+        self.model = nn.Sequential(*modules)
+        #print(self.model.state_dict().keys())
+        """
+        convs = [(2**(2+i), 2**(3+i)) for i in folds]
+        trans_convs = [(2**(3+i), 2**(2+i)) for i in reversed(folds)]
+        print(convs)
+        print(trans_convs)
+        encoder = [(in_dim,8), 'acti'] + [f"acti" if i%2 else convs[i//2] for i in range(2*len(folds))]
+        print(encoder)
+        decoder = [f"acti" if i%2 else trans_convs[i//2] for i in range(2*len(folds))] + [(8,chs), 'Sigmoid']
+        print(decoder)
+        print(*(encoder+decoder), sep='\n')
+        """
+
+    def forward(self, X):
+        return self.model(X)
+    
+class FullyConnected(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        super().__init__()
+        self.out_dim = out_dim
+        acti = nn.ReLU
+        self.wid = 32
+        self.model = nn.Sequential(
+            nn.Linear(in_dim*self.wid*self.wid, 512),
+            acti(),
+            nn.Linear(512, 256),
+            acti(),
+            nn.Linear(256, 128),
+            acti(),
+            nn.Linear(128, 256),
+            acti(),
+            nn.Linear(256, self.wid*self.wid*self.out_dim),
+            nn.Sigmoid()
+        )
+
+    def forward(self, X):
+        return self.model(X.view(X.shape[0], -1)).view(-1, self.out_dim, self.wid, self.wid)
+
 def neighbs(pos, shape, back, value):
     y, x = pos
     return [(k,l,value) for k in range(y-1, y+2) for l in range (x-1, x+2) if l>=0 and k>=0 and l<shape[1] and k<shape[0] and not ((k,l) in back)]
@@ -430,6 +505,8 @@ if __name__ == "__main__":
     parser.add_argument('-eval', action='store_true')
     parser.add_argument('-test', action='store_true')
     parser.add_argument('-gan', action='store_true')
+    parser.add_argument('-linear', action='store_true')
+    parser.add_argument('-pyramid', action='store_true')
     parser.add_argument('--train_mode', default='GT', type=str, choices=['GT', 'MIX', 'CONS', 'COMB', 'END'])
     parser.add_argument('--epochs', default=10, type=int)
     parser.add_argument('--width', default=32, type=int)
@@ -437,6 +514,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 #%%
+# DATA SETUP
 if __name__ == "__main__":
     fold_id = 0
     eval_setup = 'ball_within_template'
@@ -447,13 +525,26 @@ if __name__ == "__main__":
         with open(f'result/flownet/training/{args.path_id}/namespace.txt', 'w') as handle:
             handle.write(str(args))
 #%%
+# NETS SETUP
 if __name__ == "__main__":
-    tar_net = FlowNet(5, 16, sequ=args.sequ, trans=args.trans)
-    base_net = FlowNet(5, 16, sequ=args.sequ, trans=args.trans)
-    act_net = FlowNet(7, 16, sequ=args.sequ, trans=args.trans)
-    ext_net = UpFlowNet(7, 16, sequ=args.sequ)
+    if args.linear:
+        tar_net = FullyConnected(5, 1)
+        base_net = FullyConnected(5, 1)
+        act_net = FullyConnected(7, 1)
+        ext_net = FullyConnected(7, 1)
+    elif args.pyramid:
+        tar_net = Pyramid(5, 1)
+        base_net = Pyramid(5, 1)
+        act_net = Pyramid(7, 1)
+        ext_net = Pyramid(7, 1)
+    else:
+        tar_net = FlowNet(5, 16, sequ=args.sequ, trans=args.trans)
+        base_net = FlowNet(5, 16, sequ=args.sequ, trans=args.trans)
+        act_net = FlowNet(7, 16, sequ=args.sequ, trans=args.trans)
+        ext_net = UpFlowNet(7, 16, sequ=args.sequ)
     discr = Discriminator(8)
 #%%
+# OPTI SETUP
 if __name__ == "__main__" and args.train:
     #opti = T.optim.Adam(tar_net.parameters(recurse=True), lr=1e-3)
     #opti2 = T.optim.Adam(act_net.parameters(recurse=True), lr=1e-3)
