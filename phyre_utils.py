@@ -7,6 +7,8 @@ import cv2
 import phyre
 import os
 import pickle
+import random
+import json
 
 
 def make_dual_dataset(path, size=(32,32), save=True):
@@ -232,6 +234,119 @@ def rollouts_to_specific_paths(batch, channel, size=(32,32), gamma=1):
         trajectory[j] = base
     return trajectory
 
+def collect_traj_lookup(tasks, save_path, number_per_task, show=False, stride=10):
+    end_char = '\n'
+    tries = 0
+    max_tries = 100
+    base_path = save_path
+    cache = phyre.get_default_100k_cache('ball')
+    actions = cache.action_array
+    print("Amount per task", number_per_task)
+
+    keys = []
+    values = []
+
+    sim = phyre.initialize_simulator(tasks, 'ball')
+    for idx, task in enumerate(tasks):
+        # COLLECT SOLVES
+        n_collected = 0
+        while n_collected < number_per_task:
+            tries += 1
+
+            # getting action
+            action = actions[cache.load_simulation_states(task)==1]
+            print(f"collecting {n_collected+1} interactions from {task} with {tries} tries", end = end_char)
+            if len(action)==0:
+                print("no solution action in cache at task", task)
+                action = [np.random.rand(3)]
+            action = random.choice(action)
+
+            # simulating action
+            res = sim.simulate_action(idx, action,
+                need_featurized_objects=True, stride=1)
+
+            # checking result for contact
+            def check_contact(res: phyre.Simulation):
+                #print(res.images.shape)
+                #print(len(res.bitmap_seq))
+                #print(res.status.is_solved())
+                idx1 = res.body_list.index('RedObject')
+                idx2 = res.body_list.index('GreenObject')
+                #print(idx1, idx2)
+                #print(res.body_list)
+
+                green_idx = res.featurized_objects.colors.index('GREEN')
+                red_idx = res.featurized_objects.colors.index('RED')
+                target_dist = sum(res.featurized_objects.diameters[[green_idx,red_idx]])/2
+                for i,m in enumerate(res.bitmap_seq):
+                    if m[idx1][idx2]:
+                        pos = res.featurized_objects.features[i,[green_idx,red_idx],:2]
+                        dist = np.linalg.norm(pos[1]-pos[0])
+                        #print(dist, target_dist)
+                        if not dist<target_dist+0.005:
+                            continue
+
+                        red_radius = res.featurized_objects.diameters[red_idx]*4
+                        action_at_interaction = np.append(pos[1], red_radius)
+                        return (True, i, pos[0], action_at_interaction, target_dist)
+
+                return (False, 0, (0,0), 0)
+
+            contact, i_step, green_pos, red_pos, summed_radii = check_contact(res)
+            if  contact:
+                tries = 0
+
+                step_n = 10
+                # check whether contact happend too early
+                if i_step-step_n < 0:
+                    continue
+                n_collected += 1
+
+                green_idx = res.featurized_objects.colors.index('GREEN')
+                red_idx = res.featurized_objects.colors.index('RED')
+                green_minus, _ = res.featurized_objects.features[i_step-stride,[green_idx,red_idx],:2]
+                green_zero, _ = res.featurized_objects.features[i_step,[green_idx,red_idx],:2]
+                green_plus, _ = res.featurized_objects.features[i_step+stride,[green_idx,red_idx],:2]
+                green_key, _ = green_minus-green_zero, 0
+                green_value, _ = green_zero-green_plus, 0
+                keys.append((green_key[0], green_key[1]))
+                values.append((green_value[0], green_value[1]))
+                
+
+            if tries>max_tries:
+                break
+
+    keys = np.round(256*np.array(keys))
+    k_x_max = keys[np.argmax(np.abs(keys[:,0])),0]
+    k_y_max = keys[np.argmax(np.abs(keys[:,1])),1]
+    """keys[:,0] /= k_x_max/5
+    keys[:,1] /= k_y_max/5
+    k_x_max = np.max(np.abs(keys[:,0]))
+    k_y_max = np.max(np.abs(keys[:,1]))"""
+    values = np.round(256*np.array(values))
+    v_x_max = values[np.argmax(np.abs(values[:,0])), 0]
+    v_y_max =  values[np.argmax(np.abs(values[:,1])), 1]
+    """values[:,0] /= v_x_max/5
+    values[:,1] /= v_y_max/5
+    v_x_max = np.max(np.abs(values[:,0]))
+    v_y_max = np.max(np.abs(values[:,1]))"""
+
+    table = dict()
+    for i in range(len(keys)):
+        k = tuple(keys[i])
+        v = tuple(values[i])
+        if k in table:   
+            table[k][v] = table[k][v] + 1 if v in table[k] else 1
+        else:
+            table[k] = {v:1}
+
+
+    # Save data to file
+    os.makedirs(base_path, exist_ok=True)
+    with open(f'{base_path}/lookup.pickle', 'wb') as fp:
+        pickle.dump(table, fp)
+    print(f"FINISH collecting trajectory lookup!")
+    return keys, values, k_x_max, k_y_max, v_x_max, v_y_max, table
 
 def visualize_actions_from_cache(amount):
     cache = phyre.get_default_100k_cache("ball")
@@ -257,4 +372,19 @@ def get_auccess_for_n_tries(n):
 if __name__ == "__main__":
     #visualize_actions_from_cache(1000)
     #print(get_auccess_for_n_tries(10))
-    print_folds()
+    
+    # Collecting trajectory lookup
+    fold_id = 0
+    eval_setup = 'ball_within_template'
+    train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+    all_tasks = train_ids+dev_ids+test_ids
+    template13_tasks = [t for t in all_tasks if t.startswith('00013:')]
+    template2_tasks = [t for t in all_tasks if t.startswith('00002:')]
+    print(template2_tasks)
+    #collect_specific_channel_paths(f'./data/template13_action_paths_10x', template13_tasks, 0)
+    keys, values, kxm, kym, vxm, vym, table = collect_traj_lookup(template2_tasks, 'result/traj_lookup', 100, stride=10)
+    print(keys)
+    print(values)
+    print(kxm, kym, vxm, vym)
+    print(table)
+    

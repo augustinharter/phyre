@@ -1,7 +1,7 @@
 #%%
 from action_cgan import *
 from phyre_utils import pic_to_action_vector, pic_hist_to_action
-from phyre_rolllout_collector import collect_interactions
+from phyre_rolllout_collector import collect_interactions, collect_fullsize_interactions
 import torch as T
 import phyre
 import numpy as np
@@ -177,32 +177,38 @@ class CganInteractionSolver():
         values_batch = np.array(values_batch)
         print("values shape:", values_batch.shape, "scenes shape:", scenes_batch.shape)
         channels = T.zeros(len(values_batch), 4, self.width, self.width)
+        origin = np.zeros((len(values_batch), 256, 256))
         for i in range(len(values_batch)):
             values = values_batch[i]
-            r = values[0] # r € [0,0.25]  scope is already half so orig_r*2 = scope_r = orig_diameter
-            coords = np.array(values[1:])
+            print("values",values)
+            r = values[0]/2 # r € [0,0.25]
+            coords = values[1:]
+            """
             rel_xcoords = coords[[0,2,4]]-coords[2]
             rel_ycoords = coords[[1,3,5]]-coords[3]
             rel_normed_xcoords = (rel_xcoords /0.5)+0.5 # Scope is half of original (factor 1/2) 
             rel_normed_ycoords = (rel_ycoords /0.5)+0.5 # and shifted because center is 0.5
             xminus, x, xplus = rel_normed_xcoords
             yminus, y, yplus = rel_normed_ycoords
+            """
+            xminus, x, xplus = coords[[0,2,4]]
+            yminus, y, yplus = 1-coords[[1,3,5]] # invert y axis
 
-            # Pad, center, zoom and flip scene channel:
-            scene = np.max(scenes_batch[i,:], axis=0)
-            width = 128
-            wh = width//2
-            startx = int(256*(coords[2]))
-            starty = int(256*(1-coords[3]))
-            padded_scene = np.pad(scene, ((wh,wh), (wh,wh)))
-            centered_scene = padded_scene[starty:starty+width, startx:startx+width]
-            zoomed_scene = cv2.resize(centered_scene, (64,64))
-            flipped_scene = np.flip(zoomed_scene, axis=0)
+            # Combine all scene channels to one and invert y axis
+            scene = np.flip(np.max(scenes_batch[i,:], axis=0), axis=0)
+            origin[i] = scene
+            print("COORDS", coords)
 
-            channels[i,0] = self.draw_ball(xminus, yminus, r)
-            channels[i,1] = self.draw_ball(x, y, r)
-            channels[i,2] = self.draw_ball(xplus, yplus, r)
-            channels[i,3] = T.tensor(flipped_scene.copy())
+            #scene[int(256*y), int(256*x)] = 1
+            #path = './result/cgan_solver/ghosttest/'
+            #plt.imsave(path+f'{self.print_count}_{i}_drawing.png', self.draw_ball(scene.shape[0], x, y, r))
+            #plt.imsave(path+f'{self.print_count}_{i}_scene.png', scene)
+
+            # Create generator input channels
+            channels[i,0] = T.from_numpy(self.center_cut_zoom(self.draw_ball(scene.shape[0], xminus, yminus, r), x, y, 128))
+            channels[i,1] = T.from_numpy(self.center_cut_zoom(self.draw_ball(scene.shape[0], x, y, r), x, y, 128))
+            channels[i,2] = T.from_numpy(self.center_cut_zoom(self.draw_ball(scene.shape[0], xplus, yplus, r), x, y, 128))
+            channels[i,3] = T.from_numpy(self.center_cut_zoom(scene.copy(), x, y, 128))
         
         # Generating Predictions
         noise = T.randn(len(values_batch), self.generator.noise_dim)
@@ -211,27 +217,7 @@ class CganInteractionSolver():
             # Noise makes a big difference, this is the same noise for the whole batch 
         with T.no_grad():
             predictions = self.generator(channels, noise)
-            confidence = self.discriminator(T.cat((channels,predictions), dim=1))
-        if show:
-            images = (T.sum(T.cat((channels, predictions), dim=1), dim=1)>0.01).float()
-            plt.imshow(T.sum(channels, dim=1)[0])
-            plt.show()
-            plt.imshow(predictions[0,0])
-            plt.show()
-            plt.imshow(images[0])
-            plt.show()
-        else:
-            path = 'result/cgan_solver/tests/'
-            os.makedirs(path, exist_ok=True)
-            images = (T.sum(T.cat((channels, predictions), dim=1), dim=1)>0.01).float()
-            for j in range(len(values_batch)):
-                plt.imsave(path+f'{self.print_count}_{j}_inputs.png', T.sum(channels, dim=1)[j])
-                plt.imsave(path+f'{self.print_count}_{j}_outputs.png', predictions[j,0])
-                plt.imsave(path+f'{self.print_count}_{j}_combined.png', images[j])
-                with open(path+f'{self.print_count}_{j}_confidence_{confidence[j,0]}.txt', 'w') as fp:
-                    fp.write(str(confidence[j,0]))
-            self.print_count +=1
-            
+            confidence = self.discriminator(T.cat((channels,predictions), dim=1))            
 
         actions = []
         for i, pic in enumerate(predictions):
@@ -247,21 +233,61 @@ class CganInteractionSolver():
             action[2] *= 1.0
             pos = np.array(values_batch[i][3:5])
             action[:2] += pos
-
             actions.append(action)
+
+        if show:
+            images = (T.sum(T.cat((channels, predictions), dim=1), dim=1)>0.01).float()
+            plt.imshow(T.sum(channels, dim=1)[0])
+            plt.show()
+            plt.imshow(predictions[0,0])
+            plt.show()
+            plt.imshow(images[0])
+            plt.show()
+        else:
+            path = './result/cgan_solver/ghosttest/'
+            os.makedirs(path, exist_ok=True)
+            images = (T.sum(T.cat((channels, predictions), dim=1), dim=1)>0.01).float()
+            for j in range(len(values_batch)):
+                x, y, r = actions[j]
+                final = self.draw_ball(256, x, y, r/6, invert_y=True)
+                plt.imsave(path+f'{self.print_count}_{j}_final.png', (final+origin[j]))
+                plt.imsave(path+f'{self.print_count}_{j}_balls.png', T.sum(channels[j,:3], dim=0))
+                plt.imsave(path+f'{self.print_count}_{j}_scene.png', channels[j][3])
+                plt.imsave(path+f'{self.print_count}_{j}_input.png', T.sum(channels[j], dim=0))
+                plt.imsave(path+f'{self.print_count}_{j}_outputs.png', predictions[j,0])
+                plt.imsave(path+f'{self.print_count}_{j}_combined.png', images[j])
+                with open(path+f'{self.print_count}_{j}_confidence_{confidence[j,0]}.txt', 'w') as fp:
+                    fp.write(str(confidence[j,0]))
+                with open(path+f'{self.print_count}_{j}action_{actions[j]}.txt', 'w') as fp:
+                    fp.write(str(actions[j]))
+            self.print_count +=1
         
         return actions, confidence
     
-    def draw_ball(self, x, y, r):
-        x = int(self.width*x)
-        y = int(self.width*(1-y))
-        r = self.width*r
-        X = T.arange(self.width).repeat((self.width, 1)).float()
-        Y = T.arange(self.width).repeat((self.width, 1)).transpose(0, 1).float()
+    def draw_ball(self, w, x, y, r, invert_y=False):
+        """inverts y axis """
+        x = int(w*x)
+        y = int(w*(1-y)) if invert_y else int(w*y)
+        r = w*r
+        X = T.arange(w).repeat((w, 1)).float()
+        Y = T.arange(w).repeat((w, 1)).transpose(0, 1).float()
         X -= x # X Distance
         Y -= y # Y Distance
         dist = (X.pow(2)+Y.pow(2)).pow(0.5)
         return (dist<r).float()
+
+    def center_cut_zoom(self, scene, x, y, w):
+        wh = w//2
+        startx = int(scene.shape[0]*x)
+        starty = int(scene.shape[0]*y)
+        padded_scene = np.pad(scene, ((wh,wh), (wh,wh)))
+        centered_scene = padded_scene[starty:starty+w, startx:startx+w]
+        #print("centered scene shape", centered_scene.shape)
+        zoomed_scene = cv2.resize(centered_scene, (self.width,self.width))
+        return zoomed_scene
+
+    def get_action(self, task):
+        pass
             
         
 
@@ -286,12 +312,12 @@ if __name__ == "__main__":
     solver = CganInteractionSolver("./saves/action_cgan/3conv64-128", width = 64)
 
     # Collecting Interaction data
-    data_path = './data/cgan_solver'
+    data_path = './data/cgan_solver/fullsize'
     if not os.path.exists(data_path+'/interactions.pickle'):
         os.makedirs(data_path, exist_ok=True)
         wid = solver.generator.width
         print("Collecting Data")
-        collect_interactions(data_path, template2_tasks, 10, stride=1, size=(wid,wid), static=128)
+        collect_fullsize_interactions(data_path, template2_tasks, 1, stride=1)
     with open(data_path+'/interactions.pickle', 'rb') as fs:
         X = T.tensor(pickle.load(fs), dtype=T.float)
     with open(data_path+'/info.pickle', 'rb') as fs:
@@ -305,12 +331,15 @@ if __name__ == "__main__":
 
     # Testing Loop
     for i, (X,) in enumerate(data_loader):
-        scenes_batch = np.flip(np.array([np.pad(cv2.resize(scene.numpy(), (128,128)), ((64,64), (64,64))) for scene in X[:,3]]), axis = 1)[:,None]
-        print('real sum', T.sum(X[0,0]))
+        #scenes_batch = np.flip(np.array([np.pad(cv2.resize(scene.numpy(), (128,128)), ((64,64), (64,64))) for scene in X[:,3]]), axis = 1)[:,None]
+        scenes_batch = X[:,3].numpy()[:,None]
+        X = X.flip(dims=(2,))
+        print(X.shape)
+        print('real sum', T.sum(X[0,1]))
         minus = pic_to_action_vector(X[0,0])
         zero = pic_to_action_vector(X[0,1])
         plus = pic_to_action_vector(X[0,2])
-        print('drawn sum', T.sum(solver.draw_ball(*minus)))
+        print('drawn sum', T.sum(solver.draw_ball(X[0].shape[2], *zero, invert_y=True)))
         print(minus, zero, plus)
         # method expects diameter in full scene == radius in half scene
         values_batch = np.array([[zero[2], minus[0], minus[1], zero[0], zero[1], plus[0], plus[1]]])
@@ -323,17 +352,11 @@ if __name__ == "__main__":
             plt.imshow(X[0,2]-solver.draw_ball(*pic_to_action_vector(X[0,2])))
             plt.show()
         else:
-            path = 'result/cgan_solver/tests/'
+            path = 'result/cgan_solver/ghosttest/'
             os.makedirs(path, exist_ok=True)
-            plt.imsave(path+'drawn_ball.png', solver.draw_ball(*pic_to_action_vector(X[0,2])))
-            plt.imsave(path+'orig_ball.png', X[0,2])
-            plt.imsave(path+'drawn_orig_difference.png', X[0,2]-solver.draw_ball(*pic_to_action_vector(X[0,2])))
+            #plt.imsave(path+f'drawn_ball_{i}.png', solver.draw_ball(X[0].shape[2], *pic_to_action_vector(X[0,2]), invert_y=True))
+            #plt.imsave(path+f'orig_ball_{i}.png', X[0,2])
+            #plt.imsave(path+f'drawn_orig_difference_{i}.png', X[0,2]-solver.draw_ball(X[0].shape[2], *pic_to_action_vector(X[0,2]), invert_y=True))
         # solving
         actions, conf = solver.solve_interactions(values_batch, scenes_batch, show = SHOW)
         print('actions:', actions, 'confidence:', conf)
-
-    wid = 64
-    generator = Generator(wid, 100, 4, 1, folds=3)
-    generator.load_state_dict(T.load("./saves/action_cgan/3conv64-128", map_location=T.device('cpu')))
-
-    solve(template2_tasks, generator, force_collect=False, static=128, show=False)

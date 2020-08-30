@@ -3,7 +3,7 @@ import cv2
 import pickle
 import pathlib
 import os
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import json
 import random
@@ -309,7 +309,7 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
                         
                         red_radius = res.featurized_objects.diameters[red_idx]*4
                         action_at_interaction = np.append(pos[1], red_radius)
-                        return (True, i, pos[0], action_at_interaction, target_dist)
+                        return (True, i+1, pos[0], action_at_interaction, target_dist)
 
                 return (False, 0, (0,0), 0)
 
@@ -381,6 +381,223 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
         pickle.dump(info, fp, protocol=pickle.HIGHEST_PROTOCOL)
 
     print(f"FINISH collecting interactions!")
+
+def collect_fullsize_interactions(save_path, tasks, number_per_task, stride=1, show=False):
+    end_char = '\n'
+    tries = 0
+    max_tries = 100
+    base_path = save_path
+    cache = phyre.get_default_100k_cache('ball')
+    actions = cache.action_array
+    #base_path = 'data/fiddeling'
+    data = []
+    info = {'tasks':[], 'pos':[], 'action':[]}
+    print("Amount per task", number_per_task)
+
+    sim = phyre.initialize_simulator(tasks, 'ball')
+    for idx, task in enumerate(tasks):
+        # COLLECT SOLVES
+        n_collected = 0
+        while n_collected < number_per_task:
+            tries += 1
+
+            # getting action
+            action = actions[cache.load_simulation_states(task)==1]
+            print(f"collecting {n_collected+1} interactions from {task} with {tries} tries", end = end_char)
+            if len(action)==0:
+                print("no solution action in cache at task", task)
+                action = [np.random.rand(3)]
+            action = random.choice(action)
+
+            # simulating action
+            res = sim.simulate_action(idx, action,
+                need_featurized_objects=True, stride=1)
+
+            # checking result for contact
+            def check_contact(res: phyre.Simulation):
+                #print(res.images.shape)
+                #print(len(res.bitmap_seq))
+                #print(res.status.is_solved())
+                idx1 = res.body_list.index('RedObject')
+                idx2 = res.body_list.index('GreenObject')
+                #print(idx1, idx2)
+                #print(res.body_list)
+
+                green_idx = res.featurized_objects.colors.index('GREEN')
+                red_idx = res.featurized_objects.colors.index('RED')
+                target_dist = sum(res.featurized_objects.diameters[[green_idx,red_idx]])/2
+                for i,m in enumerate(res.bitmap_seq):
+                    if m[idx1][idx2]:
+                        pos = res.featurized_objects.features[i,[green_idx,red_idx],:2]
+                        dist = np.linalg.norm(pos[1]-pos[0])
+                        #print(dist, target_dist)
+                        if not dist<target_dist+0.005:
+                            continue
+
+
+                        #print(res.featurized_objects.diameters[[green_idx,red_idx]])
+                        #print(res.featurized_objects.features[i,green_idx])
+                        #print(res.featurized_objects.features[i, red_idx])
+                        #print(i+2)
+                        #for i, scene in enumerate(res.images):
+                        #    img = phyre.observations_to_uint8_rgb(scene)
+                        #    path_str = f"{base_path}/{task[:5]}/{task[6:]}"
+                        #    pathlib.Path(path_str).mkdir(parents=True, exist_ok=True)
+                        #    cv2.imwrite(path_str+f"/{str(i)}.jpg", img[:,:,::-1])
+                        
+                        red_radius = res.featurized_objects.diameters[red_idx]*4
+                        action_at_interaction = np.append(pos[1], red_radius)
+                        return (True, i+1, pos[0], action_at_interaction, target_dist)
+
+                return (False, 0, (0,0), 0)
+
+            contact, i_step, green_pos, red_pos, summed_radii = check_contact(res)
+            if  contact:
+                tries = 0
+                n_collected += 1
+
+                step_size = 20
+                # check whether contact happend too early
+                if i_step-step_size < 0:
+                    continue
+
+                selected_rollout = np.array([[(scene==ch).astype(float) for ch in range(1,7)] for scene in res.images[i_step-step_size:i_step+step_size+1:step_size]])
+                #selected_rollout = np.flip(selected_rollout, axis=2)
+                #print(selected_rollout.shape)
+
+                # Formatting and resizing
+                se = selected_rollout
+                channel_formatted_scene = np.stack((se[0,1], se[1,1], se[2,1], np.max(se[1,2:], axis=0), se[0,0], se[1,0]))
+
+                # saving extracted scene
+                data.append(channel_formatted_scene)
+                info['tasks'].append(task)
+                info['pos'].append(green_pos)
+                info['action'].append(red_pos)
+
+                if show:
+                    plt.imshow(phyre.observations_to_uint8_rgb(res.images[i_step]))
+                    plt.show()
+                    fig, ax = plt.subplots(1,6, sharex=True, sharey=True)
+                    for i,img in enumerate(channel_formatted_scene):
+                        ax[i].imshow(img)
+                    #plt.imshow(np.concatenate([*channel_formatted_scene], axis=1))
+                    plt.show()
+                    fig, ax = plt.subplots(1,6, sharex=True, sharey=True)
+                    for i,img in enumerate(channel_formatted_scene):
+                        ax[i].imshow(img)
+                    #plt.imshow(np.concatenate([*size_formatted_scene], axis=1))
+                    plt.show()
+
+            if tries>max_tries:
+                break
+
+    # Save data to file
+    os.makedirs(base_path, exist_ok=True)
+    with open(f'{base_path}/interactions.pickle', 'wb') as fp:
+        pickle.dump(data, fp, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(f'{base_path}/info.pickle', 'wb') as fp:
+        pickle.dump(info, fp, protocol=pickle.HIGHEST_PROTOCOL)
+
+    print(f"FINISH collecting interactions!")
+
+def visualize_interactions(save_path, tasks, number_per_task, stride=1):
+    end_char = '\n'
+    tries = 0
+    max_tries = 100
+    base_path = save_path
+    cache = phyre.get_default_100k_cache('ball')
+    actions = cache.action_array
+    #base_path = 'data/fiddeling'
+    data = []
+    info = {'tasks':[], 'pos':[], 'action':[]}
+    font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 10)
+
+    print("Amount per task", number_per_task)
+
+    sim = phyre.initialize_simulator(tasks, 'ball')
+    for idx, task in enumerate(tasks):
+        # COLLECT SOLVES
+        n_collected = 0
+        while n_collected < number_per_task:
+            tries += 1
+
+            # getting action
+            action = actions[cache.load_simulation_states(task)==1]
+            print(f"collecting {n_collected+1} interactions from {task} with {tries} tries", end = end_char)
+            if len(action)==0:
+                print("no solution action in cache at task", task)
+                action = [np.random.rand(3)]
+            action = random.choice(action)
+
+            # simulating action
+            res = sim.simulate_action(idx, action,
+                need_featurized_objects=True, stride=1)
+
+            # checking result for contact
+            def check_contact(res: phyre.Simulation):
+                #print(res.images.shape)
+                #print(len(res.bitmap_seq))
+                #print(res.status.is_solved())
+                idx1 = res.body_list.index('RedObject')
+                idx2 = res.body_list.index('GreenObject')
+                #print(idx1, idx2)
+                #print(res.body_list)
+
+                green_idx = res.featurized_objects.colors.index('GREEN')
+                red_idx = res.featurized_objects.colors.index('RED')
+                target_dist = sum(res.featurized_objects.diameters[[green_idx,red_idx]])/2
+                for i,m in enumerate(res.bitmap_seq):
+                    if m[idx1][idx2]:
+                        pos = res.featurized_objects.features[i,[green_idx,red_idx],:2]
+                        dist = np.linalg.norm(pos[1]-pos[0])
+                        #print(dist, target_dist)
+                        if not dist<target_dist+0.005:
+                            continue
+
+
+                        #print(res.featurized_objects.diameters[[green_idx,red_idx]])
+                        #print(res.featurized_objects.features[i,green_idx])
+                        #print(res.featurized_objects.features[i, red_idx])
+                        #print(i+2)
+                        #for i, scene in enumerate(res.images):
+                        #    img = phyre.observations_to_uint8_rgb(scene)
+                        #    path_str = f"{base_path}/{task[:5]}/{task[6:]}"
+                        #    pathlib.Path(path_str).mkdir(parents=True, exist_ok=True)
+                        #    cv2.imwrite(path_str+f"/{str(i)}.jpg", img[:,:,::-1])
+                        
+                        red_radius = res.featurized_objects.diameters[red_idx]*4
+                        action_at_interaction = np.append(pos[1], red_radius)
+                        return (True, i+1, pos[0], action_at_interaction, target_dist)
+
+                return (False, 0, (0,0), 0)
+
+            contact, i_step, green_pos, red_pos, summed_radii = check_contact(res)
+            if  contact:
+                green_idx = res.featurized_objects.colors.index('GREEN')
+                tries = 0
+                step_range = 20
+                # check whether contact happend too early
+                if i_step-step_range < 0:
+                    continue
+                n_collected += 1
+
+                zero_pos = res.featurized_objects.features[i_step,green_idx,:2]
+                for j in range(i_step-step_range, i_step+step_range+1, stride):
+                    pos = res.featurized_objects.features[j,green_idx,:2]
+                    delta = pos-zero_pos
+                    scene = res.images[j]
+                    img = Image.fromarray(phyre.observations_to_uint8_rgb(scene))
+                    draw = ImageDraw.Draw(img)
+                    draw.text((0, 0), f"{j-i_step} {tuple(delta*256)}", (15, 15, 15), font=font)
+
+                    os.makedirs(base_path, exist_ok=True)
+                    img.save(base_path+f'/{task}_{n_collected}_{j}.png')
+
+            if tries>max_tries:
+                break
+
+    print(f"FINISH collecting interaction visualizations!")
 
 def collect_gridded_observations(path, n_per_task = 10):
     tries = 0
@@ -480,8 +697,6 @@ def get_available_tasks():
     print(available_tasks)
     json.dump(available_tasks, open("most_tasks.txt", 'w'))
         
-
-
 def load_phyre_rollouts(path, image=False, base=True):
     s = "/"
     for task in os.listdir(path):
@@ -515,4 +730,5 @@ if __name__ == "__main__":
     template2_tasks = [t for t in all_tasks if t.startswith('00002:')]
     print(template2_tasks)
     #collect_specific_channel_paths(f'./data/template13_action_paths_10x', template13_tasks, 0)
-    collect_interactions(f'./data/template2_interactions/64fromcentered128', template2_tasks, 50, 1, (64,64), show=False, static=128)
+    #collect_interactions(f'./data/template2_interactions/64fromcentered128', template2_tasks, 50, 1, (64,64), show=False, static=128)
+    visualize_interactions('result/trajectories/samples', template2_tasks[:10], 1)
