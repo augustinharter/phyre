@@ -575,7 +575,7 @@ def train_supervised(epochs:int, base_net:FlowNet, tar_net:FlowNet, act_net:Flow
             
             if not i%10:
                 os.makedirs(f'result/flownet/training/{args.path_id}', exist_ok=True)
-                print_batch = T.cat((X, target_pred, action_pred, ball_pred), dim=1).detach()
+                print_batch = T.cat((X, base_pred, target_pred, action_pred, ball_pred), dim=1).detach()
                 vis_batch(print_batch, f'result/flownet/training/{args.path_id}', f'poch_{epoch}_{i}')
             #plt.show()
 
@@ -688,18 +688,20 @@ def inspect(tar_net:FlowNet, act_net:FlowNet, ext_net:UpFlowNet,
         action_balls = X[:,0]
 
         with T.no_grad():
+            base_pred = base_net(init_scenes)
             target_pred = tar_net(init_scenes)
             action_pred = act_net(T.cat((init_scenes, target_pred, base_paths[:,None]), dim=1))
             ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
 
-        print_batch = T.cat((X, target_pred, action_pred, ball_pred), dim=1).detach()
+        print_batch = T.cat((X, base_pred, target_pred, action_pred, ball_pred), dim=1).detach()
         vis_batch(print_batch, f'result/flownet/testing/{args.path_id}', 'batch_{i}')
 
 if __name__ == "__main__" and args.test:
     fold_id=0
-    tar_net.load_state_dict(T.load(f"saves/flownet_tar_{args.path_id}.pt"))
-    act_net.load_state_dict(T.load(f"saves/flownet_act_{args.path_id}.pt"))
-    ext_net.load_state_dict(T.load(f"saves/flownet_ext_{args.path_id}.pt"))
+    tar_net.load_state_dict(T.load(f"saves/flownet/flownet_tar_{args.path_id}.pt"))
+    act_net.load_state_dict(T.load(f"saves/flownet/flownet_act_{args.path_id}.pt"))
+    ext_net.load_state_dict(T.load(f"saves/flownet/flownet_ext_{args.path_id}.pt"))
+    base_net.load_state_dict(T.load(f"saves/flownet/flownet_base_{args.path_id}.pt"))
     test_dataloader, index = make_mono_dataset(f"data/phyre_fold_{fold_id}_test_32", size=(32,32), tasks=test_ids)
     inspect(tar_net, act_net, ext_net, test_dataloader)
 # %%

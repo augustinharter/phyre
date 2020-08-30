@@ -9,7 +9,6 @@ import json
 import random
 import cv2
 import matplotlib.pyplot as plt
-from planner.planner_agent import solve
 
 def collect_images():
     tries = 0
