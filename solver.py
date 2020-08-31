@@ -39,10 +39,21 @@ def get_auccess(solver, tasks, solve_noise=False):
                 action = base_action + (np.random.rand(3)-0.5)*0.01*temp
                 res = sim.simulate_action(t_idx, action,  need_featurized_objects=False)
                 temp *=1.01
-                assert(t<500, "too many invalid tries")
+                #assert(t>500, "too many invalid tries")
             print(action, 'final action')
             # Log Attempt
             eva.maybe_log_attempt(t_idx, res.status)
     
     return eva.get_auccess()
-    
+
+if __name__ == "__main__":
+    from flownet import *
+    solver = FlownetSolver("pyramid-GT", "pyramid")
+
+    fold_id = 0
+    eval_setup = 'ball_within_template'
+    train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+    all_tasks = train_ids+dev_ids+test_ids
+    print("ready to get auccess")
+    auccess = get_auccess(solver, all_tasks[:10], solve_noise=True)
+    print(auccess)

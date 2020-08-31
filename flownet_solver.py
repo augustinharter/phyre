@@ -1,5 +1,5 @@
 #%%
-from imaginet import *
+from flownet import *
 import torch as T
 import phyre
 import numpy as np

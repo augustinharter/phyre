@@ -458,6 +458,65 @@ class FullyConnected(nn.Module):
     def forward(self, X):
         return self.model(X.view(X.shape[0], -1)).view(-1, self.out_dim, self.wid, self.wid)
 
+class FlownetSolver():
+    def __init__(self, path:str, modeltype:str):
+        super().__init__()
+        if modeltype=="linear":
+            self.tar_net = FullyConnected(5, 1)
+            self.base_net = FullyConnected(5, 1)
+            self.act_net = FullyConnected(7, 1)
+            self.ext_net = FullyConnected(7, 1)
+        elif modeltype=="pyramid":
+            self.tar_net = Pyramid(5, 1)
+            self.base_net = Pyramid(5, 1)
+            self.act_net = Pyramid(7, 1)
+            self.ext_net = Pyramid(7, 1)
+        elif modeltype=="scnn":
+            self.tar_net = FlowNet(5, 16, sequ=True, trans=False)
+            self.base_net = FlowNet(5, 16, sequ=True, trans=False)
+            self.act_net = FlowNet(7, 16, sequ=True, trans=False)
+            self.ext_net = UpFlowNet(7, 16, sequ=True)
+        else:
+            print("ERROR modeltype not understood", modeltype)
+
+        self.tar_net.load_state_dict(T.load(f"saves/flownet/flownet_tar_{path}.pt", map_location=T.device('cpu')))
+        self.act_net.load_state_dict(T.load(f"saves/flownet/flownet_act_{path}.pt", map_location=T.device('cpu')))
+        self.ext_net.load_state_dict(T.load(f"saves/flownet/flownet_ext_{path}.pt", map_location=T.device('cpu')))
+        self.base_net.load_state_dict(T.load(f"saves/flownet/flownet_base_{path}.pt", map_location=T.device('cpu')))
+        
+        self.tar_net.eval()
+        self.base_net.eval()
+        self.act_net.eval()
+        self.ext_net.eval()
+
+        print("succesfully loaded models")
+    
+    def get_actions(self, tasks):
+        sim = phyre.initialize_simulator(tasks, 'ball')
+        actions = []
+        num_batches = 1+len(tasks)//64
+        for batch in range(num_batches):
+            batch_scenes = sim.initial_scenes[batch:64*(batch+1)]
+            init_scenes = T.tensor([[(scene==channel).astype(float) for channel in range(2,7)] for scene in batch_scenes]).float()
+            emb_init_scenes = F.embedding(T.tensor(batch_scenes), T.eye(phyre.NUM_COLORS)).transpose(-1,-3)[:,1:6].float()
+            print(init_scenes.shape, emb_init_scenes.shape)
+            print(init_scenes.equal(emb_init_scenes))
+            with T.no_grad():
+                base_paths = self.base_net(init_scenes)
+                target_paths = self.tar_net(init_scenes)
+                action_paths = self.act_net(T.cat((init_scenes, target_paths, base_paths), dim=1))
+                action_balls = self.ext_net(T.cat((init_scenes, target_paths, action_paths), dim=1))
+            print(action_balls.shape)
+            for ball in action_balls[:,0]:
+                a = pic_to_action_vector(ball)
+                print(a)
+                a[2] = a[2]*4
+                actions.append(a)
+
+        print(actions)
+
+        return np.array(actions)
+
 def neighbs(pos, shape, back, value):
     y, x = pos
     return [(k,l,value) for k in range(y-1, y+2) for l in range (x-1, x+2) if l>=0 and k>=0 and l<shape[1] and k<shape[0] and not ((k,l) in back)]
