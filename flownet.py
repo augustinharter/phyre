@@ -461,6 +461,8 @@ class FullyConnected(nn.Module):
 class FlownetSolver():
     def __init__(self, path:str, modeltype:str):
         super().__init__()
+        self.path = path
+
         if modeltype=="linear":
             self.tar_net = FullyConnected(5, 1)
             self.base_net = FullyConnected(5, 1)
@@ -493,29 +495,35 @@ class FlownetSolver():
     
     def get_actions(self, tasks):
         sim = phyre.initialize_simulator(tasks, 'ball')
-        actions = []
+        actions = np.zeros((len(tasks), 3))
         num_batches = 1+len(tasks)//64
         for batch in range(num_batches):
-            batch_scenes = sim.initial_scenes[batch:64*(batch+1)]
-            init_scenes = T.tensor([[(scene==channel).astype(float) for channel in range(2,7)] for scene in batch_scenes]).float()
-            emb_init_scenes = F.embedding(T.tensor(batch_scenes), T.eye(phyre.NUM_COLORS)).transpose(-1,-3)[:,1:6].float()
-            print(init_scenes.shape, emb_init_scenes.shape)
-            print(init_scenes.equal(emb_init_scenes))
+            batch_scenes = sim.initial_scenes[batch*64:64*(batch+1)]
+            init_scenes = T.tensor([[resize((scene==channel).astype(float), (32,32)) for channel in range(2,7)] for scene in batch_scenes]).float().flip(-2)
+            #emb_init_scenes = F.embedding(T.tensor(batch_scenes), T.eye(phyre.NUM_COLORS)).transpose(-1,-3)[:,1:6].float()
+            #print(init_scenes.equal(emb_init_scenes))
             with T.no_grad():
                 base_paths = self.base_net(init_scenes)
                 target_paths = self.tar_net(init_scenes)
                 action_paths = self.act_net(T.cat((init_scenes, target_paths, base_paths), dim=1))
                 action_balls = self.ext_net(T.cat((init_scenes, target_paths, action_paths), dim=1))
-            print(action_balls.shape)
-            for ball in action_balls[:,0]:
-                a = pic_to_action_vector(ball)
-                print(a)
+                print_batch = T.cat((init_scenes, base_paths, target_paths, action_paths, action_balls), dim=1)
+                vis_batch(print_batch, f'result/flownet/solver/{self.path}', f'{batch}')
+            batch_task = tasks[64*batch:64*(batch+1)]
+            os.makedirs(f'result/solver/pyramid/', exist_ok=True)
+            for idx, ball in enumerate(action_balls[:,0]):
+                task = batch_task[idx]
+                a = pic_to_action_vector(ball, r_fac=1.5)
+                plt.imsave(f'result/solver/pyramid/{task}___{str(a)}.png', draw_ball(32, *a, invert_y = True))
                 a[2] = a[2]*4
-                actions.append(a)
+                img = np.max(print_batch[idx,[0,1,2,3,4,-1]].numpy(), axis=0)
+                plt.imsave(f'result/solver/pyramid/{task}__{str(a)}.png', img)
+                print(a)
+                actions[idx+batch*64] = a
 
-        print(actions)
+        #print(list(zip(tasks,actions)))
 
-        return np.array(actions)
+        return actions
 
 def neighbs(pos, shape, back, value):
     y, x = pos

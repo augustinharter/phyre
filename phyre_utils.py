@@ -182,6 +182,18 @@ def load_phyre_rollout_data(path, base=True):
                 else:
                     yield(trial_rollout)
     
+def draw_ball(w, x, y, r, invert_y=False):
+        """inverts y axis """
+        x = int(w*x)
+        y = int(w*(1-y)) if invert_y else int(w*y)
+        r = w*r
+        X = T.arange(w).repeat((w, 1)).float()
+        Y = T.arange(w).repeat((w, 1)).transpose(0, 1).float()
+        X -= x # X Distance
+        Y -= y # Y Distance
+        dist = (X.pow(2)+Y.pow(2)).pow(0.5)
+        return (dist<r).float()
+
 def pic_to_action_vector(pic, r_fac=1):
     X, Y = 0, 0
     for y in range(pic.shape[0]):
