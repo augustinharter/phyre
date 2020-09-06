@@ -106,7 +106,7 @@ def collect_solving_observations(path, tasks, n_per_task = 10, collect_base=True
 
     print("FINISH collecting rollouts!")
 
-def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, stride=10, size=(32,32)):
+def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, stride=10, size=(32,32), solving=True):
     end_char = '\n'
     tries = 0
     max_tries = 100
@@ -127,7 +127,7 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
         while solved < number_to_solve:
             print(f"collecting {task}: trial {solved} with {tries+1} tries", end = end_char)
             tries += 1
-            action = actions[cache.load_simulation_states(task)==1]
+            action = actions[cache.load_simulation_states(task)==(1 if solving else -1)]
             if len(action)==0:
                 print("WARNING no solution action in cache at task", task)
                 action = [np.random.rand(3)]
@@ -136,7 +136,7 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
                 need_featurized_objects=True, stride=stride)
 
             # IF SOLVED PROCESS ROLLOUT
-            if res.status.is_solved():
+            if (res.status.is_solved() == solving) and not res.status.is_invalid():
                 tries = 0
                 solved += 1
                 
@@ -192,7 +192,7 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
     with open(path+'/index.pickle', 'wb') as fp:
         pickle.dump(lib_dict, fp)
 
-    print("FINISH collecting solving dataset!")
+    print(f"FINISH collecting {'solving' if solving else 'failing'} dataset!")
 
 def collect_specific_channel_paths(path, tasks, channel, stride=10, size=(256,256)):
     end_char = '\r'

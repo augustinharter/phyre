@@ -9,6 +9,7 @@ import os
 import pickle
 import random
 import json
+from PIL import ImageDraw, Image, ImageFont
 
 
 def make_dual_dataset(path, size=(32,32), save=True):
@@ -43,7 +44,7 @@ def make_mono_dataset_old(path, size=(32,32), save=True, tasks=[]):
     dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), 32, shuffle=True)
     return dataloader, index
 
-def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32):
+def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=True, n_per_task=1):
     if os.path.exists(path+"/data.pickle") and os.path.exists(path+"/index.pickle"):
         with open(path+'/data.pickle', 'rb') as fp:
             data = pickle.load(fp)
@@ -53,7 +54,7 @@ def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32):
         print(f"Loaded dataset from {path} with shape:", X.shape)
     else:
         if tasks:
-            collect_solving_dataset(path, tasks, n_per_task=1, stride=5, size=size)
+            collect_solving_dataset(path, tasks, n_per_task=n_per_task, stride=5, size=size, solving=solving)
         with open(path+'/data.pickle', 'rb') as fp:
             data = pickle.load(fp)
         with open(path+'/index.pickle', 'rb') as fp:
@@ -64,11 +65,32 @@ def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32):
     dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), batch_size, shuffle=True)
     return dataloader, index
 
-def vis_batch(batch, path, pic_id):
-    padded = F.pad(batch, (1,1,1,1), value=0.5)
-    reshaped = T.cat([T.cat([channels for channels in sample], dim=-1) for sample in padded], dim=-2)
+def vis_batch(batch, path, pic_id, text = []):
+    #print(batch.shape)
+
+    if len(batch.shape) == 4:
+        padded = F.pad(batch, (1,1,1,1), value=0.5)
+    elif len(batch.shape) == 5:
+        padded = F.pad(batch, (0,0,1,1,1,1), value=0.5)
+    else:
+        print("Unknown shape:", batch.shape)
+
+    #print(padded.shape)
+    reshaped = T.cat([T.cat([channels for channels in sample], dim=1) for sample in padded], dim=0)
+    #print(reshaped.shape)
+    if np.max(reshaped.numpy())>1.0:
+        reshaped = reshaped/256
     os.makedirs(path, exist_ok=True)
-    plt.imsave(f'{path}/'+pic_id+'.png', reshaped, dpi=1000)
+    if text:
+        img = Image.fromarray(np.uint8(reshaped.numpy()*255), mode="L")
+        font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 8)
+        draw = ImageDraw.Draw(img)
+        for i, words in enumerate(text):
+            x, y = i*reshaped.shape[1]//len(text), 0
+            draw.text((x, y), words, fill=(255), font=font)
+        img.save(f'{path}/'+pic_id+'.png')
+    else:
+        plt.imsave(f'{path}/'+pic_id+'.png', reshaped.numpy(), dpi=1000)
 
 def prepare_data(data, size):
     targetchannel = 1
