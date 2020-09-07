@@ -8,17 +8,19 @@ import itertools
 from matplotlib import pyplot as plt
 import os
 from PIL import Image, ImageDraw, ImageFont
+import sys
 
-def get_auccess(solver, tasks, solve_noise=False, save_tries=False):
+def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False):
     if save_tries:
         font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 10)
 
     eval_setup = 'ball_within_template'
     sim = phyre.initialize_simulator(tasks, 'ball')
+    init_scenes = T.tensor([[cv2.resize((scene==channel).astype(float), (32,32)) for channel in range(2,7)] for scene in sim.initial_scenes]).float().flip(-2)
     eva = phyre.Evaluator(tasks)
 
     # Get Actions from solver:
-    all_actions = solver.get_actions(tasks)
+    all_actions = solver.get_actions(tasks, init_scenes, brute=brute)
     #print(list(zip(tasks, all_actions)))
     #return 0
 
@@ -78,12 +80,12 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False):
                     if not res.status.is_solved():
                         """ OLD APPROACH
                         action = base_action + (np.random.rand(3)-0.5)*np.array([0.3,0.05,0.05])*temp
+                        """
+                        action = base_action + delta_generator.__next__()
                         res = sim.simulate_action(t_idx, action,  need_featurized_objects=False)
                         temp *=1.01
                         eva.maybe_log_attempt(t_idx, res.status)
                         t += 1
-                        """
-                        action = base_action + delta_generator.__next__()
                         if t > 1000:
                             if not flag:
                                 print(f"WARNING can't find valid action for {task}")
@@ -109,7 +111,7 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False):
                             vis_stack[vis_count,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
                         vis_count +=1
                     
-            if not flag:
+            if not solve_noise or not flag:
                 print(f"{task} solved after", eva.attempts_per_task_index[t_idx]+1)
             vis_batch(vis_stack, f'result/solver/pyramid', f"{task}_attempts")
     
@@ -117,16 +119,13 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False):
 
 if __name__ == "__main__":
     from flownet import *
-    """
-    
-    solver = FlownetSolver("brute-CONS", "brute")
-    solver.load_data(setup="ball_within_template", fold=0, brute_search=True, n_per_task=1)
-    solver.train_brute_search()
 
-    exit()
-    """
-
-    solver = FlownetSolver("pyramid-CONS", "pyramid")
+    model_path = sys.argv[sys.argv.index("--path")+1] if "--path" in sys.argv else "default"
+    print("Model path:", model_path)
+    if "-brute" in sys.argv:
+        solver = FlownetSolver(model_path, "brute")
+    else:
+        solver = FlownetSolver(model_path, "pyramid")
 
     auccess = []
     for eval_setup in ['ball_cross_template', 'ball_within_template']:
@@ -150,17 +149,34 @@ if __name__ == "__main__":
             print(auccess_per_task)
             """
 
-            print(eval_setup, fold_id, "loading data...")
-            solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=10)
+            if "-load" in sys.argv:
+                print(eval_setup, fold_id, "loading models...")
+                solver.load_models(setup=eval_setup, fold=fold_id)
+            if "-train" in sys.argv:
+                if "-brute" in sys.argv:
+                    print(eval_setup, fold_id, "loading data for brute training...")
+                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=1, brute_search=True)
+                    print(eval_setup, fold_id, "training 'brute search' models...")
+                    solver.train_brute_search(epochs=10)
+                else:
+                    print(eval_setup, fold_id, "loading data for training...")
+                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=10)
+                    print(eval_setup, fold_id, "training 'generative' models...")
+                    solver.train_supervised(epochs=3)
+            if "-save" in sys.argv:
+                print(eval_setup, fold_id, "saving models...")
+                solver.save_models(setup=eval_setup, fold=fold_id)
 
-            print(eval_setup, fold_id, "training models...")
-            solver.train_supervised(epochs=50)
-            solver.save_models(setup=eval_setup, fold=fold_id)
-            #solver.load_models(setup=eval_setup, fold=fold_id)
-
-            print(eval_setup, fold_id, "getting auccess...")
-            auccess.append( get_auccess(solver, test_ids+dev_ids, solve_noise=True, save_tries=True) )
-            os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
-            with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
-                handle.write(f"auccess: {auccess[-1]} \nepochs: 50")
+            if "-solve" in sys.argv:
+                print(eval_setup, fold_id, "getting auccess...")
+                if "-brute" in sys.argv:
+                    auccess.append( get_auccess(solver, test_ids+dev_ids, solve_noise=False, save_tries=True, brute=True) )
+                    os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
+                    with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
+                        handle.write(f"auccess: {auccess[-1]} \nepochs: 50")
+                else:
+                    auccess.append( get_auccess(solver, test_ids+dev_ids, solve_noise=True, save_tries=True) )
+                    os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
+                    with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
+                        handle.write(f"auccess: {auccess[-1]} \nepochs: 50")
     print(auccess)

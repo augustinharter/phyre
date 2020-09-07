@@ -13,6 +13,7 @@ from itertools import chain
 import argparse
 import os
 import random
+import phyre
 #%%
 class SpatialConv(nn.Module):
     def __init__(self, conv, direction, inplace=True, trans=False):
@@ -501,13 +502,18 @@ class FlownetSolver():
 
         print("succesfully initialized models")
     
-    def get_actions(self, tasks):
-        sim = phyre.initialize_simulator(tasks, 'ball')
+    def get_actions(self, tasks, init_scenes, brute=False):
+        if brute:
+            return self.brute_searched_actions(tasks, init_scenes)
+        else:
+            return self.generative_actions(tasks, init_scenes)
+        
+    def generative_actions(self, tasks, initial_scenes):
+        self.to_eval()
         actions = np.zeros((len(tasks), 3))
         num_batches = 1+len(tasks)//64
         for batch in range(num_batches):
-            batch_scenes = sim.initial_scenes[batch*64:64*(batch+1)]
-            init_scenes = T.tensor([[resize((scene==channel).astype(float), (32,32)) for channel in range(2,7)] for scene in batch_scenes]).float().flip(-2)
+            init_scenes = initial_scenes[batch*64:64*(batch+1)]
             #emb_init_scenes = F.embedding(T.tensor(batch_scenes), T.eye(phyre.NUM_COLORS)).transpose(-1,-3)[:,1:6].float()
             #print(init_scenes.equal(emb_init_scenes))
             with T.no_grad():
@@ -522,7 +528,12 @@ class FlownetSolver():
             os.makedirs(f'result/solver/pyramid/', exist_ok=True)
             for idx, ball in enumerate(action_balls[:,0]):
                 task = batch_task[idx]
-                a = pic_to_action_vector(ball, r_fac=1.5)
+
+                # CHOOSE ONE VECTOR EXTRACTION METHOD
+                #a = pic_to_action_vector(ball, r_fac=1.5)
+                a = grow_action_vector(ball)
+                print(a)
+
                 pipeline = T.cat((print_batch[idx], 
                     T.as_tensor(np.max(print_batch[idx,[0,1,2,3,4,-1]].numpy(), axis=0)[None]),
                     draw_ball(32, *a, invert_y = True)[None]), axis = 0)[None]
@@ -540,6 +551,52 @@ class FlownetSolver():
         #print(list(zip(tasks,actions)))
 
         return actions
+
+    def brute_searched_actions(self, tasks, all_initial_scenes):
+        cache = phyre.get_default_100k_cache('ball')
+        n_actions = 1000
+        actions = cache.action_array[:n_actions]
+        solutions = np.zeros((len(tasks), 100, 3))
+        
+        self.to_train()
+        all_initial_scenes = all_initial_scenes.cuda()
+
+        # pre-compute bases
+        with T.no_grad():
+            #all_base_paths = self.base_net(init_scenes)
+            pass
+
+        # loop through tasks
+        for j, task in enumerate(tasks):
+            # loop batched through all actions
+            confs = T.zeros(n_actions)
+            bs = 64
+            n_batches = 1 + n_actions//bs
+            #repeated_base_paths = all_base_paths[j].repeat(bs,1,1,1,1)
+            repeated_initial_scenes = all_initial_scenes[j].repeat(bs,1,1,1)
+            for i in range(n_batches):
+                action_batch = actions[i*bs:(i+1)*bs]
+                init_scenes = repeated_initial_scenes[:len(action_batch)]
+                #base_paths = repeated_base_paths[:len(action_batch)]
+
+                # generate action pics from vectors
+                action_pics = T.zeros(len(action_batch), 1, self.width, self.width)
+                for j, action_vector in enumerate(action_batch):
+                    action_pics[j,0] = draw_ball(self.width, *action_vector, invert_y = True)
+                action_pics = action_pics.cuda()
+
+                with T.no_grad():
+                    base_paths = self.base_net(T.cat((action_pics, init_scenes), dim=1))
+                    action_paths = self.act_net(T.cat((action_pics, init_scenes, base_paths), dim=1))
+                    target_paths = self.tar_net(T.cat((action_pics, init_scenes, base_paths, action_paths), dim=1))
+                    confidence = self.ext_net(T.cat((action_pics, init_scenes, base_paths, action_paths, target_paths), dim=1))
+                
+                confs[i*bs:(i+1)*bs] = confidence[:,0]
+            
+            conf_args = T.argsort(confs, descending=True)
+            solutions[j] = actions[conf_args[:100]]
+
+        return solutions
 
     def load_data(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[], brute_search=False, n_per_task=1):
         fold_id = fold
@@ -568,7 +625,7 @@ class FlownetSolver():
             handle.write(f"{self.modeltype} {setup} {fold}")
 
     def train_supervised(self, train_mode='CONS', epochs=10):
-
+        self.to_train()
         data_loader = self.train_dataloader
         tar_net = self.tar_net
         base_net = self.base_net
@@ -583,6 +640,7 @@ class FlownetSolver():
 
         for epoch in range(epochs):
             for i, (X,) in enumerate(data_loader):
+                X = X.cuda()
                 # Prepare Data
                 action_balls = X[:,0]
                 init_scenes = X[:,1:6]
@@ -640,7 +698,7 @@ class FlownetSolver():
                 opti.step()
     
     def train_brute_search(self, train_mode='CONS', epochs=10):
-
+        self.to_train()
         data_loader = self.train_dataloader
         fail_loader = self.failed_dataloader
         base_net = self.base_net
@@ -657,14 +715,14 @@ class FlownetSolver():
         for epoch in range(epochs):
             for i, ((X,), (Z,)) in enumerate(zip(data_loader, fail_loader)):
                 last_index = min(X.shape[0], Z.shape[0])
-                X, Z = X[:last_index], Z[:last_index]
+                X, Z = X[:last_index].cuda(), Z[:last_index].cuda()
 
                 # Prepare Data
                 solve_scenes = X[:,:6]
                 solve_base_paths = X[:,6]
                 solve_target_paths = X[:,7]
                 solve_action_paths = X[:,9]
-                fail_scenes = Z[:,[1,0,2,3,4,5]]
+                fail_scenes = Z[:,[0,1,2,3,4,5]]
                 fail_base_paths = Z[:,6]
                 fail_target_paths = Z[:,7]
                 fail_action_paths = Z[:,9]
@@ -703,16 +761,16 @@ class FlownetSolver():
                 
                 if not i%10:
                     os.makedirs(f'result/flownet/training/{self.path}', exist_ok=True)
-                    print_batch = T.cat((T.cat((X,Z), dim=0), base_pred, target_pred, action_pred, T.ones_like(base_pred)*confidence), dim=1).detach()
+                    print_batch = T.cat((T.cat((X,Z), dim=0), base_pred, target_pred, action_pred, T.ones_like(base_pred)*confidence[:,:,None,None]), dim=1).detach()
                     text = ['red', 'green', 'blue', 'blue', 'grey', 'black', 'base', 'target', 'goal\nnot used', 'action', 'base', 'target', 'action', 'conf']
-                    vis_batch(print_batch, f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}')
+                    vis_batch(print_batch.cpu(), f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}', text=text)
                 #plt.show()
 
                 # Loss
                 tar_loss = F.binary_cross_entropy(target_pred, target_paths[:,None])
                 act_loss = F.binary_cross_entropy(action_pred, action_paths[:,None])
-                conf_target = T.cat((T.ones(X.shape[0]), T.zeros(Z.shape[0])), dim=0)
-                conf_loss = F.binary_cross_entropy(confidence, conf_target)
+                conf_target = T.cat((T.ones(X.shape[0]), T.zeros(Z.shape[0])), dim=0).cuda()
+                conf_loss = F.binary_cross_entropy(confidence[:,0], conf_target)
                 base_loss = F.binary_cross_entropy(base_pred, base_paths[:,None])
                 if modus=='END':
                     loss = conf_loss
@@ -754,40 +812,6 @@ class FlownetSolver():
         self.base_net.load_state_dict(T.load(f"saves/flownet/{self.path}_base_{setup_name}_{fold}.pt", map_location=T.device(device)))
         if self.discr is not None:
             self.discr.load_state_dict(T.load(f"saves/flownet/{self.path}_discr_{setup_name}_{fold}.pt", map_location=T.device(device)))
-
-    def brute_search(self, init_scenes):
-        cache = phyre.get_default_100k_cache('ball')
-        n_actions = 1000
-        actions = cache.action_array[:n_actions]
-        self.to_eval()
-        confs = T.zeros(n_actions)
-
-        # pre-compute bases
-        with T.no_grad():
-            base_paths = self.base_net(init_scenes)
-
-        # loop batched through actions
-        bs = 64
-        n_batches = 1 + n_actions//bs
-        for i in range(n_batches):
-            action_batch = actions[i*bs:(i+1)*bs]
-
-            # generate action pics from vectors
-            action_pics = T.zeros(len(action_batch), 1, self.width, self.width)
-            for j, action_vector in enumerate(action_batch):
-                action_pics[j,0] = draw_ball(self.width, *action_vector, invert_y = True)
-
-            with T.no_grad():
-                action_paths = self.act_net(T.cat((action_pics, init_scenes, base_paths), dim=1))
-                target_paths = self.tar_net(T.cat((action_pics, init_scenes, base_paths, action_paths), dim=1))
-                confidence = self.ext_net(T.cat((action_pics, init_scenes, base_paths, action_paths, target_paths), dim=1))
-            
-            confs[i*bs:(i+1)*bs] = confidence[:,0]
-        
-        confs = T.sort(confs, descending=True)
-        
-        return confs[:100]
-
 
     def save_models(self, setup="ball_within_template", fold=0):
         setup_name = "within" if setup=='ball_within_template' else ("cross"  if setup=='ball_cross_template' else "custom")

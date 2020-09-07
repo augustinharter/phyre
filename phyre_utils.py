@@ -223,11 +223,15 @@ def action_delta_generator():
     for fac in [1,2]:
         for rad in [0,1,-1]:
             for xd,yd in [(1,0), (-1,0), (2,0), (-2,0), (-1,2), (1,2), (-1,-2), (-1,-2)]:
-                yield(fac*np.array(coordfac*xd, coordfac*yd, rad*radfac))
+                yield (fac*np.array((coordfac*xd, coordfac*yd, rad*radfac)))
     
+    count = 0
     while True:
-        yield((2*np.random.rand(3)-1)*np.array([0.2,0.1,0.05])*temp)
-        temp *= 1.04
+        count += 1
+        action = ((2*np.random.rand(3)-1)*np.array([0.2,0.1,0.05])*temp)
+        #print(count,"th", "ACTION:", action)
+        yield np.abs(action)
+        temp = 1.04*temp if temp<3 else temp
 
 def pic_to_action_vector(pic, r_fac=1):
     X, Y = 0, 0
@@ -282,8 +286,12 @@ def grow_action_vector(pic, r_fac=1):
     num_seeds = 5
     while len(seeds)<num_seeds:
         r = 3/32
-        y, x = random.choice(np.nonzero(pic>0.1))
-        seeds.append((x.item()/wid,y.item()/wid,r))
+        try:
+            y, x = random.choice(np.nonzero(pic>0.1))
+            seeds.append((x.item()/wid,y.item()/wid,r))
+        except:
+            y, x = wid//2, wid//2
+            seeds.append((x/wid,y/wid,r))
 
     final_seeds = []
     for (x,y,r) in seeds:
@@ -297,7 +305,7 @@ def grow_action_vector(pic, r_fac=1):
             #plt.show()
         final_seeds.append(((x,y,r),v))
         
-    return max(final_seeds, key= lambda x: x[1])
+    return np.array(max(final_seeds, key= lambda x: x[1])[0])
 
 def pic_hist_to_action(pic, r_fac=3):
     # thresholding
