@@ -70,16 +70,20 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False):
                 flag = False
                 error = False
                 t = 0
+                delta_generator = action_delta_generator()
 
                 # Looping while less then 100 attempts
                 while eva.attempts_per_task_index[t_idx]<100:
                     # Searching for new action while not solved
                     if not res.status.is_solved():
+                        """ OLD APPROACH
                         action = base_action + (np.random.rand(3)-0.5)*np.array([0.3,0.05,0.05])*temp
                         res = sim.simulate_action(t_idx, action,  need_featurized_objects=False)
                         temp *=1.01
                         eva.maybe_log_attempt(t_idx, res.status)
                         t += 1
+                        """
+                        action = base_action + delta_generator.__next__()
                         if t > 1000:
                             if not flag:
                                 print(f"WARNING can't find valid action for {task}")

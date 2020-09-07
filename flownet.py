@@ -472,6 +472,7 @@ class FlownetSolver():
     def __init__(self, path:str, modeltype:str, eval_only=False):
         super().__init__()
         self.path = path
+        self.width = 32
         self.modeltype = modeltype
         self.discr = None
 
@@ -529,6 +530,7 @@ class FlownetSolver():
                 text = ['green', 'blue', 'blue', 'grey', 'black', 'base', 'act_ball', 'estimate', 'extracted\naction']
                 vis_batch(pipeline, f'result/solver/pyramid', f"{task}__{str(a)}", text = text)
                 #plt.imsave(f'result/solver/pyramid/{task}___{str(a)}.png', draw_ball(32, *a, invert_y = True))
+                # Radius times 4
                 a[2] = a[2]*4
                 #img = np.max(print_batch[idx,[0,1,2,3,4,-1]].numpy(), axis=0)
                 #plt.imsave(f'result/solver/pyramid/{task}__{str(a)}.png', img)
@@ -752,6 +754,39 @@ class FlownetSolver():
         self.base_net.load_state_dict(T.load(f"saves/flownet/{self.path}_base_{setup_name}_{fold}.pt", map_location=T.device(device)))
         if self.discr is not None:
             self.discr.load_state_dict(T.load(f"saves/flownet/{self.path}_discr_{setup_name}_{fold}.pt", map_location=T.device(device)))
+
+    def brute_search(self, init_scenes):
+        cache = phyre.get_default_100k_cache('ball')
+        n_actions = 1000
+        actions = cache.action_array[:n_actions]
+        self.to_eval()
+        confs = T.zeros(n_actions)
+
+        # pre-compute bases
+        with T.no_grad():
+            base_paths = self.base_net(init_scenes)
+
+        # loop batched through actions
+        bs = 64
+        n_batches = 1 + n_actions//bs
+        for i in range(n_batches):
+            action_batch = actions[i*bs:(i+1)*bs]
+
+            # generate action pics from vectors
+            action_pics = T.zeros(len(action_batch), 1, self.width, self.width)
+            for j, action_vector in enumerate(action_batch):
+                action_pics[j,0] = draw_ball(self.width, *action_vector, invert_y = True)
+
+            with T.no_grad():
+                action_paths = self.act_net(T.cat((action_pics, init_scenes, base_paths), dim=1))
+                target_paths = self.tar_net(T.cat((action_pics, init_scenes, base_paths, action_paths), dim=1))
+                confidence = self.ext_net(T.cat((action_pics, init_scenes, base_paths, action_paths, target_paths), dim=1))
+            
+            confs[i*bs:(i+1)*bs] = confidence[:,0]
+        
+        confs = T.sort(confs, descending=True)
+        
+        return confs[:100]
 
 
     def save_models(self, setup="ball_within_template", fold=0):

@@ -216,6 +216,19 @@ def draw_ball(w, x, y, r, invert_y=False):
         dist = (X.pow(2)+Y.pow(2)).pow(0.5)
         return (dist<r).float()
 
+def action_delta_generator():
+    temp = 1
+    radfac = 0.025
+    coordfac = 0.07
+    for fac in [1,2]:
+        for rad in [0,1,-1]:
+            for xd,yd in [(1,0), (-1,0), (2,0), (-2,0), (-1,2), (1,2), (-1,-2), (-1,-2)]:
+                yield(fac*np.array(coordfac*xd, coordfac*yd, rad*radfac))
+    
+    while True:
+        yield((2*np.random.rand(3)-1)*np.array([0.2,0.1,0.05])*temp)
+        temp *= 1.04
+
 def pic_to_action_vector(pic, r_fac=1):
     X, Y = 0, 0
     for y in range(pic.shape[0]):
@@ -228,6 +241,63 @@ def pic_to_action_vector(pic, r_fac=1):
     Y /= pic.shape[0]*summed
     r = np.sqrt(pic.sum()/(3.141592*pic.shape[0]**2))
     return [X.item(), 1-Y.item(), r_fac*r.item()]
+
+def grow_action_vector(pic, r_fac=1):
+    wid = pic.shape[0]
+
+    def get_value(x,y,r):
+        ball = draw_ball(wid, x, y, r)
+        potential = T.sum(ball)
+        actual = T.sum(pic[ball.bool()])
+        value =  (actual**0.5)*actual/potential
+        return value
+
+    def move_and_grow(x,y,r,v):
+        delta = 0.7
+        positions = [(x+dx,y+dy) for (dx,dy) in [(-(0.3+delta)/wid,0), ((0.3+delta)/wid,0), (0,-(0.3+delta)/wid), (0,(0.3+delta)/wid)] if (0<=x+dx<1) and (0<=y+dy<1)]
+        bestpos = (x,y)
+        bestrad = r
+        bestv = v
+        for pos in positions:
+            value = get_value(*pos, r)
+            rad, val = grow(*pos,r,value)
+            if val>bestv:
+                bestpos = pos
+                bestrad = rad
+                bestv = val
+        return bestpos[0], bestpos[1], bestrad, bestv
+
+    def grow(x,y,r,v):
+        bestv = v
+        bestrad = r
+        for rad in [r+0.3/wid, r+0.6/wid, r+0.9/wid, r-0.35/wid]:
+            if 0<rad<wid:
+                value = get_value(x,y,rad)
+                if value>bestv:
+                    bestv = value
+                    bestrad = rad
+        return bestrad, bestv
+
+    seeds = []
+    num_seeds = 5
+    while len(seeds)<num_seeds:
+        r = 3/32
+        y, x = random.choice(np.nonzero(pic>0.1))
+        seeds.append((x.item()/wid,y.item()/wid,r))
+
+    final_seeds = []
+    for (x,y,r) in seeds:
+        v = get_value(x,y,r)
+        #plt.imshow(pic+draw_ball(wid,x,y,r))
+        #plt.show()
+        for i in range(10):
+            x, y, r, v = move_and_grow(x,y,r,v)
+            #r, v = grow(x,y,r,v)
+            #plt.imshow(pic+draw_ball(wid,x,y,r))
+            #plt.show()
+        final_seeds.append(((x,y,r),v))
+        
+    return max(final_seeds, key= lambda x: x[1])
 
 def pic_hist_to_action(pic, r_fac=3):
     # thresholding
@@ -408,6 +478,9 @@ if __name__ == "__main__":
     #print(get_auccess_for_n_tries(10))
     
     # Collecting trajectory lookup
+    pic = draw_ball(32,0.5,0.2,0.2) + draw_ball(32,0.5,0.4,0.1)
+    print(grow_action_vector(pic))
+    exit()
     fold_id = 0
     eval_setup = 'ball_within_template'
     train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
