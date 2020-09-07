@@ -368,6 +368,10 @@ def collect_traj_lookup(tasks, save_path, number_per_task, show=False, stride=10
             # simulating action
             res = sim.simulate_action(idx, action,
                 need_featurized_objects=True, stride=1)
+            while res.status.is_invalid():
+                action = np.random.rand(3)
+                res = sim.simulate_action(idx, action,
+                    need_featurized_objects=True, stride=1)
 
             # checking result for contact
             def check_contact(res: phyre.Simulation):
@@ -394,7 +398,7 @@ def collect_traj_lookup(tasks, save_path, number_per_task, show=False, stride=10
                         action_at_interaction = np.append(pos[1], red_radius)
                         return (True, i, pos[0], action_at_interaction, target_dist)
 
-                return (False, 0, (0,0), 0)
+                return (False, 0, (0,0), 0, 0)
 
             contact, i_step, green_pos, red_pos, summed_radii = check_contact(res)
             if  contact:
@@ -404,18 +408,21 @@ def collect_traj_lookup(tasks, save_path, number_per_task, show=False, stride=10
                 # check whether contact happend too early
                 if i_step-step_n < 0:
                     continue
-                n_collected += 1
 
-                green_idx = res.featurized_objects.colors.index('GREEN')
-                red_idx = res.featurized_objects.colors.index('RED')
-                green_minus, _ = res.featurized_objects.features[i_step-stride,[green_idx,red_idx],:2]
-                green_zero, _ = res.featurized_objects.features[i_step,[green_idx,red_idx],:2]
-                green_plus, _ = res.featurized_objects.features[i_step+stride,[green_idx,red_idx],:2]
-                green_key, _ = green_minus-green_zero, 0
-                green_value, _ = green_zero-green_plus, 0
-                keys.append((green_key[0], green_key[1]))
-                values.append((green_value[0], green_value[1]))
+                try:
+                    green_idx = res.featurized_objects.colors.index('GREEN')
+                    red_idx = res.featurized_objects.colors.index('RED')
+                    green_minus, _ = res.featurized_objects.features[i_step-stride,[green_idx,red_idx],:2]
+                    green_zero, _ = res.featurized_objects.features[i_step,[green_idx,red_idx],:2]
+                    green_plus, _ = res.featurized_objects.features[i_step+stride,[green_idx,red_idx],:2]
+                    green_key, _ = green_minus-green_zero, 0
+                    green_value, _ = green_zero-green_plus, 0
+                    keys.append((green_key[0], green_key[1]))
+                    values.append((green_value[0], green_value[1]))
+                except:
+                    continue
                 
+                n_collected += 1
 
             if tries>max_tries:
                 break
@@ -478,9 +485,9 @@ if __name__ == "__main__":
     #print(get_auccess_for_n_tries(10))
     
     # Collecting trajectory lookup
-    pic = draw_ball(32,0.5,0.2,0.2) + draw_ball(32,0.5,0.4,0.1)
-    print(grow_action_vector(pic))
-    exit()
+    #pic = draw_ball(32,0.5,0.2,0.2) + draw_ball(32,0.5,0.4,0.1)
+    #print(grow_action_vector(pic))
+    #exit()
     fold_id = 0
     eval_setup = 'ball_within_template'
     train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
@@ -489,7 +496,7 @@ if __name__ == "__main__":
     template2_tasks = [t for t in all_tasks if t.startswith('00002:')]
     print(template2_tasks)
     #collect_specific_channel_paths(f'./data/template13_action_paths_10x', template13_tasks, 0)
-    keys, values, kxm, kym, vxm, vym, table = collect_traj_lookup(template2_tasks, 'result/traj_lookup', 100, stride=10)
+    keys, values, kxm, kym, vxm, vym, table = collect_traj_lookup(all_tasks, 'result/traj_lookup/all_tasks', 10, stride=10)
     print(keys)
     print(values)
     print(kxm, kym, vxm, vym)
