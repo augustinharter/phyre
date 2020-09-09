@@ -35,7 +35,7 @@ if __name__ == "__main__":
     parser.add_argument('-lindisc', action='store_true')
     parser.add_argument('-lingen', action='store_true')
     parser.add_argument('-sequ', action='store_true')
-    parser.add_argument('-full', action='store_true')
+    parser.add_argument('-load', action='store_true')
     parser.add_argument('--epochs', default=10, type=int)
     parser.add_argument('--width', default=16, type=int)
     parser.add_argument('--geneval', default=10, type=int)
@@ -46,7 +46,7 @@ if __name__ == "__main__":
 
     BASE_PATH = './saves/action_cgan/'
     SAVE_PATH = BASE_PATH+args.path
-    DATA_PATH = f'./data/template2_interactions/{args.data}_interactions.pickle'
+    DATA_PATH = f'./data/all_task_interactions/{args.data}/interactions.pickle'
     NOISE_DIM = 100
     ONLY_GENERATE = args.genonly
     WIDTH = args.width
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         X = T.tensor(pickle.load(fs), dtype=T.float)
     print('loaded dataset with shape:', X.shape)
     data_set = T.utils.data.TensorDataset(X)
-    data_loader = T.utils.data.DataLoader(data_set, batch_size=BATCH_SIZE, shuffle=False)
+    data_loader = T.utils.data.DataLoader(data_set, batch_size=BATCH_SIZE, shuffle=True)
 
 # %%
 class Discriminator(nn.Module):
@@ -225,13 +225,13 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
     # Start Epoch
     for i, (batch,) in enumerate(data_loader):
         batch.float()
-
+        bh = batch.shape[0]//2
         if args.single:
-            gen_batch = batch[:batch.shape[0]//2,[0,1,2,3,5]].to(device)
-            disc_batch = batch[batch.shape[0]//2:,[0,1,2,3,5]].to(device)
+            gen_batch = batch[:bh,[0,1,2,3,5]].to(device)
+            disc_batch = batch[bh:2*bh,[0,1,2,3,5]].to(device)
         else:
-            gen_batch = batch[:batch.shape[0]//2].to(device)
-            disc_batch = batch[batch.shape[0]//2:].to(device)
+            gen_batch = batch[:bh].to(device)
+            disc_batch = batch[bh:2*bh].to(device)
         T.autograd.set_detect_anomaly(True)
 
         # Discriminator
@@ -246,7 +246,7 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
             disc_fake_loss = criterion(fake_validity, T.zeros_like(fake_validity))
             disc_real_loss = criterion(real_validity, T.ones_like(real_validity))
             # second stage
-            noise2 = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
+            noise2 = T.randn(disc_batch.shape[0], generator2.noise_dim).to(device)
             primed_cond = disc_batch[:,:generator2.s_chan]
             primed_fake = generator2(primed_cond, noise2).detach()
             fake_validity2 = discriminator2(T.cat((disc_batch[:,:discriminator2.s_chan], primed_fake), dim=1))
@@ -330,10 +330,14 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
     wid = fakes.shape[2]
     num_cells = fakes.shape[0]
     s = cond_batch.cpu()
+
+    
     green = np.max(np.stack((0.5*s[:,0],s[:,1],0.5*s[:,2]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     blue = s[:,3].reshape(num_cells,1,wid,wid)
     red = np.max(np.stack((0.5*actions[:,0],actions[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     orig = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
+
+
     red = np.max(np.stack((0.5*g[:,0],g[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     gen = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
     #print(combined)
@@ -354,6 +358,12 @@ def save_models(models, save_path):
         print("saving:", save_path+f'/{model}.pt')
         T.save(models[model].state_dict(), save_path+f'/{model}.pt')
 
+def load_models(models, load_path):
+    os.makedirs(load_path, exist_ok=True)
+    for model in models:
+        print("loading:", load_path+f'/{model}.pt')
+        models[model].load_state_dict(T.load(load_path+f'/{model}.pt'))
+
 
 # %%
 if __name__ == "__main__":
@@ -373,6 +383,13 @@ if __name__ == "__main__":
 
 #%%
 if __name__ == "__main__":
+    if args.load:
+        models = {'generator': generator, 'discriminator': discriminator}
+        if args.sequ:
+            models['generator2'] = generator2
+            models['discriminator2'] = discriminator2
+        load_models(models, SAVE_PATH)
+        
     # Training
     if not ONLY_GENERATE:
         for epoch in range(args.epochs):
@@ -396,11 +413,8 @@ if __name__ == "__main__":
     else:
         for i, (batch, ) in enumerate(data_loader):
             batch = batch.to(device)
-            if i ==3:
+            if i ==10:
                 break
-            generator.load_state_dict(T.load(SAVE_PATH+'/generator.pt'))
-            if args.sequ:
-                generator2.load_state_dict(T.load(SAVE_PATH+'/generator2.pt'))
             generate(generator, batch[:32], 1, f'{args.path}-results', i, grid=(4,2), 
                 sequ = generator2 if args.sequ else None, device=device)
             generate(generator, batch[:32], 1, f'{args.path}-results', str(i)+'_', grid=(4,2), 

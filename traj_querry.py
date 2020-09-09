@@ -1,16 +1,17 @@
 import pickle
 import numpy as np
 
-with open('result/traj_lookup/lookup.pickle', 'rb') as fp:
+with open('result/traj_lookup/all_tasks/lookup.pickle', 'rb') as fp:
     table = pickle.load(fp)
 
+print([(x,y) for x,y in table.keys() if y==0 and x>=0])
 dummy_querry = (0,5)
 dummy_traj = np.array((2.5, 2.1))
 
 if dummy_querry in table:
     # Szenario/querry is known
     possible_trajectories = table[dummy_querry].keys()
-    print(possible_trajectories)
+    print(f"possible trajectoryis for dummy querry {dummy_querry}", possible_trajectories)
 
     rounded_traj = tuple(np.round(dummy_traj))
     if rounded_traj in table[dummy_querry]:

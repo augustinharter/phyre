@@ -142,7 +142,7 @@ if __name__ == "__main__":
     auccess = []
     for eval_setup in ['ball_cross_template', 'ball_within_template']:
         auccess.append(eval_setup)
-        for fold_id in range(10):
+        for fold_id in range(3):
             if "-brute" in sys.argv:
                 solver = FlownetSolver(model_path, "brute")
             else:
