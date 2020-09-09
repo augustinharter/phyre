@@ -244,7 +244,7 @@ def collect_specific_channel_paths(path, tasks, channel, stride=10, size=(256,25
 
     print(f"FINISH collecting channel {channel} paths!")
 
-def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,64), static=0, show=False):
+def collect_interactions(save_path, tasks, number_per_task, step_size=20, size=(64,64), static=0, show=False):
     end_char = '\n'
     tries = 0
     max_tries = 100
@@ -311,7 +311,7 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
                         action_at_interaction = np.append(pos[1], red_radius)
                         return (True, i+1, pos[0], action_at_interaction, target_dist)
 
-                return (False, 0, (0,0), 0)
+                return (False, 0, (0,0), 0, 0)
 
             contact, i_step, green_pos, red_pos, summed_radii = check_contact(res)
             if  contact:
@@ -325,9 +325,9 @@ def collect_interactions(save_path, tasks, number_per_task, stride=1, size=(64,6
                 wh = width//2
                 starty = round((green_pos[1])*256)
                 startx = round(green_pos[0]*256)
-                step_size = 20
+                step_size = step_size
                 # check whether contact happend too early
-                if i_step-step_size < 0:
+                if i_step-step_size <= 0 and i_step+step_size<len(res.images):
                     continue
 
                 selected_rollout = np.array([[(scene==ch).astype(float) for ch in range(1,7)] for scene in res.images[i_step-step_size:i_step+step_size+1:step_size]])
@@ -725,10 +725,11 @@ if __name__ == "__main__":
     fold_id = 0
     eval_setup = 'ball_within_template'
     train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
-    all_tasks = train_ids+dev_ids+test_ids
+    all_tasks = list(train_ids+dev_ids+test_ids)
+    all_tasks.remove('00024:440')
     template13_tasks = [t for t in all_tasks if t.startswith('00013:')]
     template2_tasks = [t for t in all_tasks if t.startswith('00002:')]
-    print(template2_tasks)
+    #print(template2_tasks)
     #collect_specific_channel_paths(f'./data/template13_action_paths_10x', template13_tasks, 0)
-    #collect_interactions(f'./data/template2_interactions/64fromcentered128', template2_tasks, 50, 1, (64,64), show=False, static=128)
-    visualize_interactions('result/trajectories/samples', template2_tasks[:10], 1)
+    collect_interactions(f'./data/all_task_interactions/64fromcentered128', all_tasks[::-1], 2, size=(64,64), show=False, static=128)
+    #visualize_interactions('result/trajectories/samples', template2_tasks[:10], 1)

@@ -126,10 +126,11 @@ class CganInteractionSolver():
     solver.solve_interactions(values_batch, scenes_batch)
     """
 
-    def __init__(self, model_path:str = "./saves/action_cgan/3conv64-128", width:int = 64):
+    def __init__(self, model_path:str = "./saves/action_cgan/3conv64-128", width:int = 64, sequ=False):
         self.width = width
         self.print_count = 0
 
+        # FIRST Stage
         # Loading state_dict
         gen_state_dict = T.load(model_path+'/generator.pt', map_location=T.device('cpu'))
         disc_state_dict = T.load(model_path+'/discriminator.pt', map_location=T.device('cpu'))
@@ -140,7 +141,7 @@ class CganInteractionSolver():
         last_layer = max(layer_numbers)
         out_channels = gen_state_dict[f'conv_model.{last_layer}.weight'].shape[1]
         n_encoder_layers = len(set(int(key[8:10].strip('.')) for key in gen_state_dict if key.startswith('encoder')))
-        print(f'Loaded model with: width {width}, in_chs {in_channels}, out_chs {out_channels}, folds {n_encoder_layers-1}')
+        print(f'Loaded {"first" if sequ else ''} models with: width {width}, in_chs {in_channels}, out_chs {out_channels}, folds {n_encoder_layers-1}')
 
         # Loading model:
         self.generator = Generator(width, 100, in_channels, out_channels, folds=n_encoder_layers-1)
@@ -149,6 +150,28 @@ class CganInteractionSolver():
         self.discriminator = Discriminator(width, in_channels, out_channels, folds=n_encoder_layers-1)
         self.discriminator.load_state_dict(disc_state_dict)
         self.discriminator.eval()
+
+        if sequ:
+            # SECOND Stage
+            # Loading state_dict
+            gen_state_dict = T.load(model_path+'/generator2.pt', map_location=T.device('cpu'))
+            disc_state_dict = T.load(model_path+'/discriminator2.pt', map_location=T.device('cpu'))
+
+            # Extracting Model parameters from state_dict
+            in_channels = gen_state_dict['encoder.0.weight'].shape[1]
+            layer_numbers = set(int(key[11:13].strip('.')) for key in gen_state_dict if key.startswith('conv_model'))
+            last_layer = max(layer_numbers)
+            out_channels = gen_state_dict[f'conv_model.{last_layer}.weight'].shape[1]
+            n_encoder_layers = len(set(int(key[8:10].strip('.')) for key in gen_state_dict if key.startswith('encoder')))
+            print(f'Loaded second models with: width {width}, in_chs {in_channels}, out_chs {out_channels}, folds {n_encoder_layers-1}')
+
+            # Loading model:
+            self.generator2 = Generator(width, 100, in_channels, out_channels, folds=n_encoder_layers-1)
+            self.generator2.load_state_dict(gen_state_dict)
+            self.generator2.eval()
+            self.discriminator2 = Discriminator(width, in_channels, out_channels, folds=n_encoder_layers-1)
+            self.discriminator2.load_state_dict(disc_state_dict)
+            self.discriminator2.eval()
 
     def solve_interactions(self, values_batch, scenes_batch, same_noise=False, show=False):
         """
@@ -217,7 +240,11 @@ class CganInteractionSolver():
             # Noise makes a big difference, this is the same noise for the whole batch 
         with T.no_grad():
             predictions = self.generator(channels, noise)
-            confidence = self.discriminator(T.cat((channels,predictions), dim=1))            
+            if sequ:
+                predictions2 = self.generator2(T.cat((channels, predictions), dim=1), noise)
+                confidence =  self.discriminator(T.cat((channels, predictions, predictions2), dim=1))
+            else:
+                confidence = self.discriminator(T.cat((channels,predictions), dim=1))            
 
         actions = []
         for i, pic in enumerate(predictions):
