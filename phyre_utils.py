@@ -223,6 +223,7 @@ def action_delta_generator():
     for fac in [1,2]:
         for rad in [0,1,-1]:
             for xd,yd in [(1,0), (-1,0), (2,0), (-2,0), (-1,2), (1,2), (-1,-2), (-1,-2)]:
+                #print((fac*np.array((coordfac*xd, coordfac*yd, rad*radfac))))
                 yield (fac*np.array((coordfac*xd, coordfac*yd, rad*radfac)))
     
     count = 0
@@ -247,6 +248,13 @@ def pic_to_action_vector(pic, r_fac=1):
     return [X.item(), 1-Y.item(), r_fac*r.item()]
 
 def grow_action_vector(pic, r_fac=1):
+    id = int((T.rand(1)*100))
+    os.makedirs("result/flownet/solver/grower", exist_ok=True)
+    plt.imsave(f"result/flownet/solver/grower/{id}.png", pic)
+    pic = pic*(pic>pic.mean())
+    plt.imsave(f"result/flownet/solver/grower/{id}_thresh.png", pic)
+
+
     wid = pic.shape[0]
 
     def get_value(x,y,r):
@@ -305,7 +313,11 @@ def grow_action_vector(pic, r_fac=1):
             #plt.show()
         final_seeds.append(((x,y,r),v))
         
-    return np.array(max(final_seeds, key= lambda x: x[1])[0])
+    action = np.array(max(final_seeds, key= lambda x: x[1])[0])
+    action[1] = 1-action[1]
+    plt.imsave(f"result/flownet/solver/grower/{id}_drawn.png", draw_ball(wid, *action, invert_y = True))
+    action[2] = action[2] if action[2]<0.25 else 0.24999
+    return action
 
 def pic_hist_to_action(pic, r_fac=3):
     # thresholding

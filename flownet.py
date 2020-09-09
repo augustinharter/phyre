@@ -525,7 +525,7 @@ class FlownetSolver():
                 text = ['green', 'blue', 'blue', 'grey', 'black', 'base', 'target', 'act_path', 'act_ball']
                 vis_batch(print_batch, f'result/flownet/solver/{self.path}', f'{batch}', text=text)
             batch_task = tasks[64*batch:64*(batch+1)]
-            os.makedirs(f'result/solver/pyramid/', exist_ok=True)
+            os.makedirs(f'result/solver/generative/', exist_ok=True)
             for idx, ball in enumerate(action_balls[:,0]):
                 task = batch_task[idx]
 
@@ -539,7 +539,7 @@ class FlownetSolver():
                     draw_ball(32, *a, invert_y = True)[None]), axis = 0)[None]
                 
                 text = ['green', 'blue', 'blue', 'grey', 'black', 'base', 'act_ball', 'estimate', 'extracted\naction']
-                vis_batch(pipeline, f'result/solver/pyramid', f"{task}__{str(a)}", text = text)
+                vis_batch(pipeline, f'result/solver/generative', f"{task}__{str(a)}", text = text)
                 #plt.imsave(f'result/solver/pyramid/{task}___{str(a)}.png', draw_ball(32, *a, invert_y = True))
                 # Radius times 4
                 a[2] = a[2]*4
@@ -575,14 +575,15 @@ class FlownetSolver():
             #repeated_base_paths = all_base_paths[j].repeat(bs,1,1,1,1)
             repeated_initial_scenes = all_initial_scenes[j].repeat(bs,1,1,1)
             for i in range(n_batches):
+                print(f"at action {i*bs} for task {task}", end='\r')
                 action_batch = actions[i*bs:(i+1)*bs]
                 init_scenes = repeated_initial_scenes[:len(action_batch)]
                 #base_paths = repeated_base_paths[:len(action_batch)]
 
                 # generate action pics from vectors
                 action_pics = T.zeros(len(action_batch), 1, self.width, self.width)
-                for j, action_vector in enumerate(action_batch):
-                    action_pics[j,0] = draw_ball(self.width, *action_vector, invert_y = True)
+                for k, action_vector in enumerate(action_batch):
+                    action_pics[k,0] = draw_ball(self.width, *action_vector, invert_y = True)
                 action_pics = action_pics.cuda()
 
                 with T.no_grad():
@@ -594,7 +595,10 @@ class FlownetSolver():
                 confs[i*bs:(i+1)*bs] = confidence[:,0]
             
             conf_args = T.argsort(confs, descending=True)
-            solutions[j] = actions[conf_args[:100]]
+            #print(conf_args[:100])
+            #print(actions[conf_args[:100]])
+            best_actions = actions[conf_args[:100]]
+            solutions[j] = best_actions
 
         return solutions
 
@@ -678,7 +682,7 @@ class FlownetSolver():
                     os.makedirs(f'result/flownet/training/{self.path}', exist_ok=True)
                     print_batch = T.cat((X, base_pred, target_pred, action_pred, ball_pred), dim=1).detach()
                     text = ['red', 'green', 'blue', 'blue', 'grey', 'black', 'base', 'target', 'goal\nnot used', 'action', 'base', 'target', 'action', 'red ball']
-                    vis_batch(print_batch, f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}', text=text)
+                    vis_batch(print_batch.cpu(), f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}', text=text)
                 #plt.show()
 
                 # Loss
@@ -798,10 +802,10 @@ class FlownetSolver():
         self.base_net = self.base_net.cuda()
         self.act_net = self.act_net.cuda()
         self.ext_net = self.ext_net.cuda()
-        self.tar_net.eval()
-        self.base_net.eval()
-        self.act_net.eval()
-        self.ext_net.eval()
+        self.tar_net.train()
+        self.base_net.train()
+        self.act_net.train()
+        self.ext_net.train()
 
     def load_models(self, setup="ball_within_template", fold=0, device='cpu'):
         setup_name = "within" if setup=='ball_within_template' else ("cross"  if setup=='ball_cross_template' else "custom")

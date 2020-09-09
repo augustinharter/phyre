@@ -52,9 +52,9 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False)
             # Checking for valid action
             while res.status.is_invalid():
                 t += 1
-                action = base_action + (np.random.rand(3)-0.5)*0.01*temp
+                action = base_action + (np.random.rand(3)-0.5)*0.05*temp
                 res = sim.simulate_action(t_idx, action,  need_featurized_objects=False)
-                temp *=1.01
+                temp *= 1.01 if temp <5 else 1
                 #assert(t>500, "too many invalid tries")
             print(action, 'valid action')
 
@@ -66,10 +66,10 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False)
                     vis_stack[0,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
 
             # Collecting 100 Actions if solve noise
+            warning_flag = False
             if solve_noise:
                 base_action = action
                 temp = 1
-                flag = False
                 error = False
                 t = 0
                 delta_generator = action_delta_generator()
@@ -81,28 +81,29 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False)
                         """ OLD APPROACH
                         action = base_action + (np.random.rand(3)-0.5)*np.array([0.3,0.05,0.05])*temp
                         """
-                        action = base_action + delta_generator.__next__()
-                        res = sim.simulate_action(t_idx, action,  need_featurized_objects=False)
-                        temp *=1.01
-                        eva.maybe_log_attempt(t_idx, res.status)
-                        t += 1
-                        if t > 1000:
-                            if not flag:
+                        if t<1000:
+                            action = base_action + delta_generator.__next__()
+                            res = sim.simulate_action(t_idx, action,  need_featurized_objects=False)
+                            temp *=1.01
+                            eva.maybe_log_attempt(t_idx, res.status)
+                            t += 1
+                        else:
+                            if not warning_flag:
                                 print(f"WARNING can't find valid action for {task}")
-                                flag = True
+                                warning_flag = True
                                 error = True
                             eva.maybe_log_attempt(t_idx, phyre.SimulationStatus.NOT_SOLVED)
 
-                    # if solved repeating action
+                    # if solved -> repeating action
                     else:
-                        if not flag:
+                        if not warning_flag:
                             print(f"{task} solved after", eva.attempts_per_task_index[t_idx])
 
                             # Visualization
                             if save_tries and not error:
                                 for i in range(min(len(res.images), 10)):
                                     vis_stack[5,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
-                        flag = True
+                        warning_flag = True
                         eva.maybe_log_attempt(t_idx, res.status)
                     
                     # Visualization
@@ -110,10 +111,23 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False)
                         for i in range(min(len(res.images), 10)):
                             vis_stack[vis_count,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
                         vis_count +=1
-                    
-            if not solve_noise or not flag:
-                print(f"{task} solved after", eva.attempts_per_task_index[t_idx]+1)
-            vis_batch(vis_stack, f'result/solver/pyramid', f"{task}_attempts")
+
+                if not warning_flag and not res.status.is_solved() and eva.attempts_per_task_index[t_idx]==100:
+                    print(f"{task} not solved")
+                vis_batch(vis_stack, f'result/solver/pyramid', f"{task}_attempts")
+            # Not Solve Noise Case
+            else:
+                # Visualization
+                if save_tries and not res.status.is_invalid() and vis_count<5:
+                    for i in range(min(len(res.images), 10)):
+                        vis_stack[vis_count,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
+                    vis_count +=1
+                if res.status.is_solved():
+                    print(f"{task} solved after", eva.attempts_per_task_index[t_idx])
+                    vis_batch(vis_stack, f'result/solver/pyramid', f"{task}_attempts")
+                    while eva.attempts_per_task_index[t_idx]<100:
+                        eva.maybe_log_attempt(t_idx, res.status)
+                    break
     
     return eva.get_auccess()
 
@@ -122,15 +136,17 @@ if __name__ == "__main__":
 
     model_path = sys.argv[sys.argv.index("--path")+1] if "--path" in sys.argv else "default"
     print("Model path:", model_path)
-    if "-brute" in sys.argv:
-        solver = FlownetSolver(model_path, "brute")
-    else:
-        solver = FlownetSolver(model_path, "pyramid")
+    epochs = int(sys.argv[sys.argv.index("--epochs")+1]) if "--epochs" in sys.argv else 10
+    nper = int(sys.argv[sys.argv.index("--nper")+1]) if "--nper" in sys.argv else 1
 
     auccess = []
     for eval_setup in ['ball_cross_template', 'ball_within_template']:
         auccess.append(eval_setup)
         for fold_id in range(10):
+            if "-brute" in sys.argv:
+                solver = FlownetSolver(model_path, "brute")
+            else:
+                solver = FlownetSolver(model_path, "pyramid")
             train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
 
             """
@@ -155,14 +171,14 @@ if __name__ == "__main__":
             if "-train" in sys.argv:
                 if "-brute" in sys.argv:
                     print(eval_setup, fold_id, "loading data for brute training...")
-                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=1, brute_search=True)
+                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True)
                     print(eval_setup, fold_id, "training 'brute search' models...")
-                    solver.train_brute_search(epochs=10)
+                    solver.train_brute_search(epochs=epochs)
                 else:
                     print(eval_setup, fold_id, "loading data for training...")
-                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=10)
+                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper)
                     print(eval_setup, fold_id, "training 'generative' models...")
-                    solver.train_supervised(epochs=3)
+                    solver.train_supervised(epochs=epochs)
             if "-save" in sys.argv:
                 print(eval_setup, fold_id, "saving models...")
                 solver.save_models(setup=eval_setup, fold=fold_id)
@@ -170,7 +186,7 @@ if __name__ == "__main__":
             if "-solve" in sys.argv:
                 print(eval_setup, fold_id, "getting auccess...")
                 if "-brute" in sys.argv:
-                    auccess.append( get_auccess(solver, test_ids+dev_ids, solve_noise=False, save_tries=True, brute=True) )
+                    auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                     os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
                     with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
                         handle.write(f"auccess: {auccess[-1]} \nepochs: 50")
