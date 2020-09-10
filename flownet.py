@@ -692,7 +692,7 @@ class FlownetSolver():
             self.test_dataloader, index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_test_{width}xy_{n_per_task}n", 
                 size=(width,width), tasks=test_ids, n_per_task=n_per_task)
         if brute_search:
-            if test:
+            if not test:
                 self.failed_dataloader, index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_train_{width}xy_{n_per_task}n", 
                     size=(width,width), tasks=train_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task, shuffle=shuffle)
             else:
@@ -961,7 +961,6 @@ class FlownetSolver():
                     T.stack((action_balls[:,None]+background, init_scenes[:,None,1]+background, init_scenes[:,None,2]+init_scenes[:,None,3]+background),dim=-1)), 
                     dim=1).detach()
                 text = ['initial\nscene', 'base\npaths', 'target\npaths', 'action\npaths', 'action\nballs', 'injected\nscene', 'GT\nscene']
-                vis_batch(self.cut_off(diff_batch.cpu()), f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}_diff', text=text)
                 vis_batch(self.cut_off(diff_batch.cpu()), f'result/flownet/inspect/{self.path}/{eval_setup}_fold_{fold}', f'poch_{epoch}_{i}_diff', text=text)
 
     def inspect_brute_search(self, eval_setup, fold, train_mode='CONS', epochs=1):

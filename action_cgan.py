@@ -116,7 +116,6 @@ class Discriminator(nn.Module):
             x = self.lin_model(scenes.flatten(start_dim=1))
         return x
 
-
 # %%
 class View(nn.Module):
     #Changing the Shape
@@ -334,14 +333,14 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
     num_cells = fakes.shape[0]
     s = cond_batch.cpu()
 
-    
+    # composing original scene    
     green = np.max(np.stack((0.5*s[:,0],s[:,1],0.5*s[:,2]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     blue = s[:,3].reshape(num_cells,1,wid,wid)
     red = np.max(np.stack((0.5*actions[:,0],actions[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     orig = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
 
-
-    red = np.max(np.stack((g[:,0],0.5*g[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    # composing scene with generated action
+    red = np.max(np.stack((0.1*g[:,0],0.5*g[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     gen = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
     #print(combined)
     combined = np.concatenate((orig, gen), axis=1).reshape(2*num_cells,3,wid+2,wid+2)

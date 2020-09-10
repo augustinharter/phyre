@@ -156,39 +156,39 @@ if __name__ == "__main__":
             train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
 
             if "-load" in sys.argv:
-                print(eval_setup, fold_id, "loading models...")
+                print(model_path, eval_setup, fold_id, "|| loading models...")
                 solver.load_models(setup=eval_setup, fold=fold_id)
 
             if "-train" in sys.argv:
                 if "-brute" in sys.argv:
-                    print(eval_setup, fold_id, "loading data for brute training...")
+                    print(model_path, eval_setup, fold_id, "|| loading data for brute training...")
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=shuffle)
-                    print(eval_setup, fold_id, "training 'brute search' models...")
+                    print(model_path, eval_setup, fold_id, "|| training 'brute search' models...")
                     solver.train_brute_search(epochs=epochs)
                 else:
-                    print(eval_setup, fold_id, "loading data for generative training...")
+                    print(model_path, eval_setup, fold_id, "|| loading data for generative training...")
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
-                    print(eval_setup, fold_id, "training 'generative' models...")
+                    print(model_path, eval_setup, fold_id, "|| training 'generative' models...")
                     solver.train_supervised(epochs=epochs)
 
             if "-save" in sys.argv:
-                print(eval_setup, fold_id, "saving models...")
+                print(model_path, eval_setup, fold_id, "|| saving models...")
                 solver.save_models(setup=eval_setup, fold=fold_id)
 
             if "-inspect" in sys.argv:
                 if "-brute" in sys.argv:
-                    print(eval_setup, fold_id, "loading data for brute testing...")
+                    print(model_path, eval_setup, fold_id, "|| loading data for brute testing...")
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=False, test=True)
-                    print(eval_setup, fold_id, "inspecting brute performance...")
+                    print(model_path, eval_setup, fold_id, "|| inspecting brute performance...")
                     solver.inspect_brute_search(eval_setup, fold_id)
                 else:
-                    print(eval_setup, fold_id, "loading data for generative testing...")
+                    print(model_path, eval_setup, fold_id, "|| loading data for generative testing...")
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=False, test=True)
-                    print(eval_setup, fold_id, "inspecting generative performance...")
+                    print(model_path, eval_setup, fold_id, "|| inspecting generative performance...")
                     solver.inspect_supervised(eval_setup, fold_id)
                     
             if "-solve" in sys.argv:
-                print(eval_setup, fold_id, "getting auccess...")
+                print(model_path, eval_setup, fold_id, "|| getting auccess...")
                 if "-brute" in sys.argv:
                     auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                     os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
