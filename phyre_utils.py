@@ -27,7 +27,7 @@ def make_dual_dataset(path, size=(32,32), save=True):
     dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X,Y), 32, shuffle=True)
     return dataloader
 
-def make_mono_dataset_old(path, size=(32,32), save=True, tasks=[]):
+def make_mono_dataset_old(path, size=(32,32), save=True, tasks=[], shuffle=True):
     if os.path.exists(path+".pickle") and os.path.exists(path+"_index.pickle"):
        X = T.load(path+'.pickle')
        index = T.load(path+'_index.pickle')
@@ -41,10 +41,10 @@ def make_mono_dataset_old(path, size=(32,32), save=True, tasks=[]):
         if save:
             T.save(X, path+'.pickle')
             T.save(index, path+'_index.pickle')
-    dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), 32, shuffle=True)
+    dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), 32, shuffle=shuffle)
     return dataloader, index
 
-def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=True, n_per_task=1):
+def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=True, n_per_task=1, shuffle=True):
     if os.path.exists(path+"/data.pickle") and os.path.exists(path+"/index.pickle"):
         with open(path+'/data.pickle', 'rb') as fp:
             data = pickle.load(fp)
@@ -62,7 +62,7 @@ def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=Tru
         X = T.tensor(data).float()
         print(f"Loaded dataset from {path} with shape:", X.shape)
         
-    dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), batch_size, shuffle=True)
+    dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), batch_size, shuffle=shuffle)
     return dataloader, index
 
 def vis_batch(batch, path, pic_id, text = []):
@@ -85,14 +85,15 @@ def vis_batch(batch, path, pic_id, text = []):
         text_height= 30
         if len(reshaped.shape) == 2:
             reshaped = F.pad(reshaped, (0,0,text_height,0), value=0.0)
+            img = Image.fromarray(np.uint8(reshaped.numpy()*255), mode="L")
         elif len(reshaped.shape) == 3:
             reshaped = F.pad(reshaped, (0,0,0,0,text_height,0), value=0.0)
-        img = Image.fromarray(np.uint8(reshaped.numpy()*255), mode="L")
-        font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 8)
+            img = Image.fromarray(np.uint8(reshaped.numpy()*255))
+        font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 9)
         draw = ImageDraw.Draw(img)
         for i, words in enumerate(text):
             x, y = i*reshaped.shape[1]//len(text), 0
-            draw.text((x, y), words, fill=(255), font=font)
+            draw.text((x, y), words, fill=(255) if len(reshaped.shape)==2 else (255,255,255), font=font)
         img.save(f'{path}/'+pic_id+'.png')
     else:
         plt.imsave(f'{path}/'+pic_id+'.png', reshaped.numpy(), dpi=1000)
@@ -252,7 +253,7 @@ def pic_to_action_vector(pic, r_fac=1):
     r = np.sqrt(pic.sum()/(3.141592*pic.shape[0]**2))
     return [X.item(), 1-Y.item(), r_fac*r.item()]
 
-def grow_action_vector(pic, r_fac=1):
+def grow_action_vector(pic, r_fac=1, show=False):
     id = int((T.rand(1)*100))
     os.makedirs("result/flownet/solver/grower", exist_ok=True)
     plt.imsave(f"result/flownet/solver/grower/{id}.png", pic)
@@ -314,15 +315,23 @@ def grow_action_vector(pic, r_fac=1):
         for i in range(10):
             x, y, r, v = move_and_grow(x,y,r,v)
             #r, v = grow(x,y,r,v)
-            #plt.imshow(pic+draw_ball(wid,x,y,r))
-            #plt.show()
+            if show:
+                plt.imshow(pic+draw_ball(wid,x,y,r))
+                plt.show()
         final_seeds.append(((x,y,r),v))
         
     action = np.array(max(final_seeds, key= lambda x: x[1])[0])
     action[1] = 1-action[1]
     plt.imsave(f"result/flownet/solver/grower/{id}_drawn.png", draw_ball(wid, *action, invert_y = True))
     action[2]*=r_fac
+    compare_action = action.copy()
     action[2] = action[2] if action[2]<0.25 else 0.24999
+    action[0] = action[0] if action[0]> 0 else  0
+    action[0] = action[0] if action[0]<1- 0 else 1- 0
+    action[1] = action[1] if action[1]> 0 else  0
+    action[1] = action[1] if action[1]<1- 0 else 1- 0
+    if np.any(action!=compare_action):
+        print("something was out of bounce:", action, compare_action)
     return action
 
 def pic_hist_to_action(pic, r_fac=3):
