@@ -602,7 +602,7 @@ class FlownetSolver():
 
         return solutions
 
-    def load_data(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[], brute_search=False, n_per_task=1):
+    def load_data(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[], brute_search=False, n_per_task=1, shuffle=True):
         fold_id = fold
         eval_setup = setup
         width = 32
@@ -618,12 +618,12 @@ class FlownetSolver():
             test_ids = dev_ids + test_ids
 
         self.train_dataloader, index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n", 
-            size=(width,width), tasks=train_ids[:], batch_size=batchsize//2 if brute_search else batchsize, n_per_task=n_per_task)
+            size=(width,width), tasks=train_ids[:], batch_size=batchsize//2 if brute_search else batchsize, n_per_task=n_per_task, shuffle=shuffle)
         #self.test_dataloader, index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_test_{width}xy_{n_per_task}n", 
         #    size=(width,width), tasks=test_ids, n_per_task=n_per_task)
         if brute_search:
             self.failed_dataloader, index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_train_{width}xy_{n_per_task}n", 
-                size=(width,width), tasks=train_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task)
+                size=(width,width), tasks=train_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task, shuffle=shuffle)
         os.makedirs(f'result/flownet/training/{self.path}', exist_ok=True)
         with open(f'result/flownet/training/{self.path}/namespace.txt', 'w') as handle:
             handle.write(f"{self.modeltype} {setup} {fold}")
@@ -786,7 +786,119 @@ class FlownetSolver():
                 opti.zero_grad()
                 loss.backward()
                 opti.step()
-        
+
+    def inspect_supervised(self, train_mode='CONS', epochs=1):
+        self.to_eval()
+        data_loader = self.train_dataloader
+        tar_net = self.tar_net
+        base_net = self.base_net
+        act_net = self.act_net
+        ext_net = self.ext_net
+
+        for epoch in range(epochs):
+            for i, (X,) in enumerate(data_loader):
+                X = X.cuda()
+                # Prepare Data
+                action_balls = X[:,0]
+                init_scenes = X[:,1:6]
+                base_paths = X[:,6]
+                target_paths = X[:,7]
+                goal_paths = X[:,8]
+                action_paths = X[:,9]
+
+                # Optional visiualization of batch data
+                #print(init_scenes.shape, target_paths.shape, action_paths.shape, base_paths.shape)
+                #vis_batch(X, f'data/flownet', f'{epoch}_{i}')
+
+                if train_mode=='MIX':
+                    modus = random.choice(['GT', 'COMB', 'CONS', 'END'])
+                else:
+                    modus = train_mode
+
+                # Forward Pass
+                target_pred = tar_net(init_scenes)
+                base_pred = base_net(init_scenes)
+                if modus=='GT':
+                    action_pred = act_net(T.cat((init_scenes, target_paths[:,None], base_paths[:,None]), dim=1))
+                    ball_pred = ext_net(T.cat((init_scenes, target_paths[:,None], action_paths[:,None]), dim=1))
+                elif modus=='CONS':
+                    action_pred = act_net(T.cat((init_scenes, target_pred.detach(), base_pred.detach()), dim=1))
+                    ball_pred = ext_net(T.cat((init_scenes, target_pred.detach(), action_pred.detach()), dim=1))
+                elif modus=='COMB':
+                    action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
+                    ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
+                elif modus=='END':
+                    action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
+                    ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
+                
+                os.makedirs(f'result/flownet/inspect/{self.path}', exist_ok=True)
+                print_batch = T.cat((X, base_pred, target_pred, action_pred, ball_pred), dim=1).detach()
+                text = ['red', 'green', 'blue', 'blue', 'grey', 'black', 'base', 'target', 'goal\nnot used', 'action', 'base', 'target', 'action', 'red ball']
+                vis_batch(print_batch.cpu(), f'result/flownet/inspect/{self.path}', f'poch_{epoch}_{i}', text=text)
+    
+    def inspect_brute_search(self, train_mode='CONS', epochs=10):
+        self.to_eval()
+        data_loader = self.train_dataloader
+        fail_loader = self.failed_dataloader
+        base_net = self.base_net
+        act_net = self.act_net
+        tar_net = self.tar_net
+        ext_net = self.ext_net
+
+        for epoch in range(epochs):
+            for i, ((X,), (Z,)) in enumerate(zip(data_loader, fail_loader)):
+                last_index = min(X.shape[0], Z.shape[0])
+                X, Z = X[:last_index].cuda(), Z[:last_index].cuda()
+
+                # Prepare Data
+                solve_scenes = X[:,:6]
+                solve_base_paths = X[:,6]
+                solve_target_paths = X[:,7]
+                solve_action_paths = X[:,9]
+                fail_scenes = Z[:,[0,1,2,3,4,5]]
+                fail_base_paths = Z[:,6]
+                fail_target_paths = Z[:,7]
+                fail_action_paths = Z[:,9]
+
+                init_scenes = T.cat((solve_scenes, fail_scenes), dim=0)
+                target_paths = T.cat((solve_target_paths, fail_target_paths), dim=0)
+                base_paths = T.cat((solve_base_paths, fail_base_paths), dim=0)
+                action_paths = T.cat((solve_action_paths, fail_action_paths), dim=0)
+
+                # Optional visiualization of batch data
+                #print(init_scenes.shape, target_paths.shape, action_paths.shape, base_paths.shape)
+                #vis_batch(X, f'data/flownet', f'{epoch}_{i}')
+
+                if train_mode=='MIX':
+                    modus = random.choice(['GT', 'COMB', 'CONS', 'END'])
+                else:
+                    modus = train_mode
+
+                # Forward Pass
+                base_pred = base_net(init_scenes)
+                if modus=='GT':
+                    action_pred = act_net(T.cat((init_scenes, target_paths[:,None], base_paths[:,None]), dim=1))
+                    confidence = ext_net(T.cat((init_scenes, target_paths[:,None], action_paths[:,None]), dim=1))
+                elif modus=='CONS':
+                    action_pred = act_net(T.cat((init_scenes, base_pred.detach()), dim=1))
+                    target_pred = tar_net(T.cat((init_scenes, base_pred.detach(), action_pred.detach()), dim=1))
+                    confidence = ext_net(T.cat((init_scenes, base_pred.detach(), target_pred.detach(), action_pred.detach()), dim=1))
+                elif modus=='COMB':
+                    action_pred = act_net(T.cat((init_scenes, base_pred), dim=1))
+                    target_pred = tar_net(T.cat((init_scenes, base_pred, action_pred), dim=1))
+                    confidence = ext_net(T.cat((init_scenes, base_pred, target_pred, action_pred), dim=1))
+                elif modus=='END':
+                    action_pred = act_net(T.cat((init_scenes, base_pred), dim=1))
+                    target_pred = tar_net(T.cat((init_scenes, base_pred, action_pred), dim=1))
+                    confidence = ext_net(T.cat((init_scenes, base_pred, target_pred, action_pred), dim=1))
+                
+                if not i%10:
+                    os.makedirs(f'result/flownet/training/{self.path}', exist_ok=True)
+                    print_batch = T.cat((T.cat((X,Z), dim=0), base_pred, target_pred, action_pred, T.ones_like(base_pred)*confidence[:,:,None,None]), dim=1).detach()
+                    text = ['red', 'green', 'blue', 'blue', 'grey', 'black', 'base', 'target', 'goal\nnot used', 'action', 'base', 'target', 'action', 'conf']
+                    vis_batch(print_batch.cpu(), f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}', text=text)
+                #plt.show()
+
     def to_eval(self):
         self.tar_net = self.tar_net.cpu()
         self.base_net = self.base_net.cpu()

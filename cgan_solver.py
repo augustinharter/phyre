@@ -1,6 +1,6 @@
 #%%
 from action_cgan import *
-from phyre_utils import pic_to_action_vector, pic_hist_to_action
+from phyre_utils import pic_to_action_vector, pic_hist_to_action, grow_action_vector
 from phyre_rolllout_collector import collect_interactions, collect_fullsize_interactions
 import torch as T
 import phyre
@@ -129,6 +129,7 @@ class CganInteractionSolver():
     def __init__(self, model_path:str = "./saves/action_cgan/3conv64-128", width:int = 64, sequ=False):
         self.width = width
         self.print_count = 0
+        self.sequ = sequ
 
         # FIRST Stage
         # Loading state_dict
@@ -141,10 +142,10 @@ class CganInteractionSolver():
         last_layer = max(layer_numbers)
         out_channels = gen_state_dict[f'conv_model.{last_layer}.weight'].shape[1]
         n_encoder_layers = len(set(int(key[8:10].strip('.')) for key in gen_state_dict if key.startswith('encoder')))
-        print(f'Loaded {"first" if sequ else ''} models with: width {width}, in_chs {in_channels}, out_chs {out_channels}, folds {n_encoder_layers-1}')
+        print(f'Loaded {"first" if sequ else ""} models with: width {width}, in_chs {in_channels}, out_chs {out_channels}, folds {n_encoder_layers-1}')
 
         # Loading model:
-        self.generator = Generator(width, 100, in_channels, out_channels, folds=n_encoder_layers-1)
+        self.generator = Generator(width, 100, in_channels, out_channels, folds=n_encoder_layers-1,)
         self.generator.load_state_dict(gen_state_dict)
         self.generator.eval()
         self.discriminator = Discriminator(width, in_channels, out_channels, folds=n_encoder_layers-1)
@@ -240,16 +241,16 @@ class CganInteractionSolver():
             # Noise makes a big difference, this is the same noise for the whole batch 
         with T.no_grad():
             predictions = self.generator(channels, noise)
-            if sequ:
+            if self.sequ:
                 predictions2 = self.generator2(T.cat((channels, predictions), dim=1), noise)
-                confidence =  self.discriminator(T.cat((channels, predictions, predictions2), dim=1))
+                confidence =  self.discriminator2(T.cat((channels, predictions, predictions2), dim=1))
             else:
                 confidence = self.discriminator(T.cat((channels,predictions), dim=1))            
 
         actions = []
         for i, pic in enumerate(predictions):
             # PROCESS ACTION
-            action = np.array(pic_to_action_vector(pic[0]))
+            action = np.array(grow_action_vector(pic[0]))
             # shift by half to get relative position
             action[:2] -= 0.5
             # multiply by half because extracted scope is already half of the scene
@@ -259,9 +260,24 @@ class CganInteractionSolver():
             # finetuning
             action[2] *= 1.0
             pos = np.array(values_batch[i][3:5])
+            old_action = action.copy()
             action[:2] += pos
+            """
+            if np.any(action<0):
+                print(old_action)
+                print(pos)
+                print(action)
+                plt.imshow(np.max(T.cat((channels[i], predictions[i]), dim=0).numpy(), axis=0))
+                plt.show()
+                grow_action_vector(pic[0], show=True)
+            """
+            # correction:
+            action[2] = action[2] if action[2]<1 else 1
+            action[0] = action[0] if action[0]>action[2] else action[2]
+            action[0] = action[0] if action[0]<1-action[2] else 1-action[2]
+            action[1] = action[1] if action[1]>action[2] else action[2]
+            action[1] = action[1] if action[1]<1-action[2] else 1-action[2]
             actions.append(action)
-
         if show:
             images = (T.sum(T.cat((channels, predictions), dim=1), dim=1)>0.01).float()
             plt.imshow(T.sum(channels, dim=1)[0])
@@ -289,7 +305,7 @@ class CganInteractionSolver():
                     fp.write(str(actions[j]))
             self.print_count +=1
         
-        return actions, confidence
+        return np.array(actions), confidence
     
     def draw_ball(self, w, x, y, r, invert_y=False):
         """inverts y axis """
@@ -313,7 +329,7 @@ class CganInteractionSolver():
         zoomed_scene = cv2.resize(centered_scene, (self.width,self.width))
         return zoomed_scene
 
-    def get_action(self, task):
+    def get_action(self, task, init_scenes):
         pass
             
         

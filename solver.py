@@ -1,4 +1,4 @@
-from phyre_utils import pic_to_action_vector, pic_hist_to_action, vis_batch
+from phyre_utils import pic_to_action_vector, pic_hist_to_action, vis_batch, action_delta_generator
 import torch as T
 import phyre
 import numpy as np
@@ -20,7 +20,10 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False)
     eva = phyre.Evaluator(tasks)
 
     # Get Actions from solver:
-    all_actions = solver.get_actions(tasks, init_scenes, brute=brute)
+    if brute:
+        all_actions = solver.get_actions(tasks, init_scenes, brute =True)
+    else:
+        all_actions = solver.get_actions(tasks, init_scenes)
     #print(list(zip(tasks, all_actions)))
     #return 0
 
@@ -183,6 +186,13 @@ if __name__ == "__main__":
                 print(eval_setup, fold_id, "saving models...")
                 solver.save_models(setup=eval_setup, fold=fold_id)
 
+            if "-inspect" in sys.argv:
+                print(eval_setup, fold_id, "inspecting performance...")
+                if "-brute" in sys.argv:
+                    solver.inspect_brute_search()
+                else:
+                    solver.inspect_supervised()
+                    
             if "-solve" in sys.argv:
                 print(eval_setup, fold_id, "getting auccess...")
                 if "-brute" in sys.argv:
@@ -195,4 +205,5 @@ if __name__ == "__main__":
                     os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
                     with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
                         handle.write(f"auccess: {auccess[-1]} \nepochs: 50")
+
     print(auccess)
