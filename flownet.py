@@ -8,7 +8,7 @@ from IPython.display import clear_output
 from phyre_rolllout_collector import load_phyre_rollouts, collect_solving_dataset
 from cv2 import resize, imshow, waitKey
 import cv2
-from phyre_utils import *
+from phyre_utils import draw_ball, grow_action_vector, vis_batch, make_mono_dataset, action_delta_generator
 from itertools import chain
 import argparse
 import os
@@ -476,6 +476,7 @@ class FlownetSolver():
         self.width = 32
         self.modeltype = modeltype
         self.discr = None
+        self.r_fac = 1.2
 
         if modeltype=="linear":
             self.tar_net = FullyConnected(5, 1)
@@ -522,8 +523,8 @@ class FlownetSolver():
                 action_paths = self.act_net(T.cat((init_scenes, target_paths, base_paths), dim=1))
                 action_balls = self.ext_net(T.cat((init_scenes, target_paths, action_paths), dim=1))
                 print_batch = T.cat((init_scenes, base_paths, target_paths, action_paths, action_balls), dim=1)
-                text = ['green', 'blue', 'blue', 'grey', 'black', 'base', 'target', 'act_path', 'act_ball']
-                vis_batch(print_batch, f'result/flownet/solver/{self.path}', f'{batch}', text=text)
+                #text = ['green\nball GT', 'blue GT\ndynamic', 'blue GT\nstatic', 'grey', 'black', 'base\npred', 'target\npred', 'action\npred', 'a-ball\npred']
+                #vis_batch(print_batch, f'result/flownet/solver/{self.path}', f'{batch}', text=text)
             batch_task = tasks[64*batch:64*(batch+1)]
             os.makedirs(f'result/solver/generative/', exist_ok=True)
             for idx, ball in enumerate(action_balls[:,0]):
@@ -531,16 +532,24 @@ class FlownetSolver():
 
                 # CHOOSE ONE VECTOR EXTRACTION METHOD
                 #a = pic_to_action_vector(ball, r_fac=1.5)
-                a = grow_action_vector(ball)
+                a = grow_action_vector(ball, r_fac =self.r_fac)
                 print(a)
 
-                pipeline = T.cat((print_batch[idx], 
-                    T.as_tensor(np.max(print_batch[idx,[0,1,2,3,4,-1]].numpy(), axis=0)[None]),
-                    draw_ball(32, *a, invert_y = True)[None]), axis = 0)[None]
+                drawn = draw_ball(32, *a, invert_y = True)
+                pure_scene = T.as_tensor(np.max(print_batch[idx,[0,1,2,3,4]].numpy(), axis=0))
+                scene_with_estimate = T.as_tensor(np.max(print_batch[idx,[0,1,2,3,4,-1]].numpy(), axis=0))
+                scene_with_injected = T.as_tensor(np.max(T.stack((scene_with_estimate, drawn), dim=0).numpy(), axis=0))
+                init_with_injected = T.as_tensor(np.max(T.cat((init_scenes[idx], drawn[None]), dim=0).numpy(), axis=0))
+                #print(print_batch[idx].shape)
+                #print(scene_with_estimate[None].shape)
+                #print(scene_with_injected[None].shape)
+                #print(init_with_injected[None].shape)
+                pipeline = T.cat((print_batch[idx], scene_with_estimate[None], pure_scene[None], scene_with_injected[None], init_with_injected[None]), dim=0)
                 
-                text = ['green', 'blue', 'blue', 'grey', 'black', 'base', 'act_ball', 'estimate', 'extracted\naction']
-                vis_batch(pipeline, f'result/solver/generative', f"{task}__{str(a)}", text = text)
-                #plt.imsave(f'result/solver/pyramid/{task}___{str(a)}.png', draw_ball(32, *a, invert_y = True))
+                text = ['green\nball GT', 'blue GT\ndynamic', 'blue GT\nstatic', 'grey', 'black', 'full\nscene', 'base\npred', 'target\npred', 'action\npred', 'a-ball\npred','action\nestimate', 'estimate\n/w action','   final\n   action']
+                x,y,r = round(a[0], 3), round(a[1], 3), round(a[2], 3)
+                vis_batch(pipeline[None], f'result/solver/generative', f"{task}__{str(a)}", text = text)
+                #plt.imsave(f'result/solver/pyramid/{task}___{(x,y,r)}.png', draw_ball(32, *a, invert_y = True))
                 # Radius times 4
                 a[2] = a[2]*4
                 #img = np.max(print_batch[idx,[0,1,2,3,4,-1]].numpy(), axis=0)
@@ -678,11 +687,15 @@ class FlownetSolver():
                     action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
                     ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
                 
-                if not i%10:
+                if not i%30:
                     os.makedirs(f'result/flownet/training/{self.path}', exist_ok=True)
                     print_batch = T.cat((X, base_pred, target_pred, action_pred, ball_pred), dim=1).detach()
                     text = ['red', 'green', 'blue', 'blue', 'grey', 'black', 'base', 'target', 'goal\nnot used', 'action', 'base', 'target', 'action', 'red ball']
                     vis_batch(print_batch.cpu(), f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}', text=text)
+
+                    diff_batch = T.cat((base_paths[None]+base_pred, target_paths[None]+target_pred, action_paths[None]+action_pred, action_balls[None]+ball_pred), dim=1).detach().abs()
+                    text = ['base\npaths', 'target\npaths', 'action\npaths', 'action\nballs']
+                    vis_batch(diff_batch.cpu(), f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}_diff', text=text)
                 #plt.show()
 
                 # Loss
@@ -763,11 +776,15 @@ class FlownetSolver():
                     target_pred = tar_net(T.cat((init_scenes, base_pred, action_pred), dim=1))
                     confidence = ext_net(T.cat((init_scenes, base_pred, target_pred, action_pred), dim=1))
                 
-                if not i%10:
+                if not i%30:
                     os.makedirs(f'result/flownet/training/{self.path}', exist_ok=True)
                     print_batch = T.cat((T.cat((X,Z), dim=0), base_pred, target_pred, action_pred, T.ones_like(base_pred)*confidence[:,:,None,None]), dim=1).detach()
                     text = ['red', 'green', 'blue', 'blue', 'grey', 'black', 'base', 'target', 'goal\nnot used', 'action', 'base', 'target', 'action', 'conf']
                     vis_batch(print_batch.cpu(), f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}', text=text)
+
+                    diff_batch = T.cat((base_paths[None]+base_pred, target_paths[None]+target_pred, action_paths[None]+action_pred, T.ones_like(base_pred)*confidence[:,:,None,None]), dim=1).detach().abs()
+                    text = ['base\npaths', 'target\npaths', 'action\npaths', 'action\nballs', 'confidence']
+                    vis_batch(diff_batch.cpu(), f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}_diff', text=text)
                 #plt.show()
 
                 # Loss

@@ -82,6 +82,11 @@ def vis_batch(batch, path, pic_id, text = []):
         reshaped = reshaped/256
     os.makedirs(path, exist_ok=True)
     if text:
+        text_height= 30
+        if len(reshaped.shape) == 2:
+            reshaped = F.pad(reshaped, (0,0,text_height,0), value=0.0)
+        elif len(reshaped.shape) == 3:
+            reshaped = F.pad(reshaped, (0,0,0,0,text_height,0), value=0.0)
         img = Image.fromarray(np.uint8(reshaped.numpy()*255), mode="L")
         font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 8)
         draw = ImageDraw.Draw(img)
@@ -316,6 +321,7 @@ def grow_action_vector(pic, r_fac=1):
     action = np.array(max(final_seeds, key= lambda x: x[1])[0])
     action[1] = 1-action[1]
     plt.imsave(f"result/flownet/solver/grower/{id}_drawn.png", draw_ball(wid, *action, invert_y = True))
+    action[2]*=r_fac
     action[2] = action[2] if action[2]<0.25 else 0.24999
     return action
 

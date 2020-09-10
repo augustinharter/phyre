@@ -1,4 +1,4 @@
-from phyre_utils import pic_to_action_vector, pic_hist_to_action, vis_batch
+from phyre_utils import pic_to_action_vector, pic_hist_to_action, vis_batch, make_mono_dataset, grow_action_vector
 import torch as T
 import phyre
 import numpy as np
@@ -53,6 +53,7 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False)
             while res.status.is_invalid():
                 t += 1
                 action = base_action + (np.random.rand(3)-0.5)*0.05*temp
+                print(action, f"potential action for task {task}")
                 res = sim.simulate_action(t_idx, action,  need_featurized_objects=False)
                 temp *= 1.01 if temp <5 else 1
                 #assert(t>500, "too many invalid tries")
@@ -80,11 +81,11 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False)
                     if not res.status.is_solved():
                         """ OLD APPROACH
                         action = base_action + (np.random.rand(3)-0.5)*np.array([0.3,0.05,0.05])*temp
+                        temp *= 1.01 if temp <5 else 1
                         """
                         if t<1000:
                             action = base_action + delta_generator.__next__()
                             res = sim.simulate_action(t_idx, action,  need_featurized_objects=False)
-                            temp *=1.01
                             eva.maybe_log_attempt(t_idx, res.status)
                             t += 1
                         else:

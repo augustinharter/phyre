@@ -294,14 +294,17 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
             generate(generator, gen_batch, 1, args.path+'-training', epoch, sequ=generator2 if args.sequ else None, device=device)
             generate(generator, gen_batch, 1, args.path+'-training', str(epoch)+'_', sequ=generator2 if args.sequ else None, device=device)
 
-def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = None, device="cpu"):
+def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = None, device="cpu", GT=True):
     # generate fakes
     with T.no_grad():
         noise = T.randn(cond_batch.shape[0], generator.noise_dim).to(device)
         fakes = generator(cond_batch[:,:generator.s_chan], noise).detach()
         if sequ is not None:
             noise2 = T.randn(cond_batch.shape[0], generator.noise_dim).to(device)
-            primed_cond = T.cat((cond_batch[:,:generator.s_chan], fakes), dim=1)
+            if GT:
+                primed_cond = cond_batch[:,:sequ.s_chan]
+            else:
+                primed_cond = T.cat((cond_batch[:,:generator.s_chan], fakes), dim=1)
             #primed_cond =cond_batch[:,:generator.s_chan+1]
             primed_fake = sequ(primed_cond, noise2)
             fakes = T.cat((fakes, primed_fake), dim=1)
@@ -338,7 +341,7 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
     orig = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
 
 
-    red = np.max(np.stack((0.5*g[:,0],g[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    red = np.max(np.stack((g[:,0],0.5*g[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     gen = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
     #print(combined)
     combined = np.concatenate((orig, gen), axis=1).reshape(2*num_cells,3,wid+2,wid+2)
