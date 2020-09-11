@@ -98,6 +98,48 @@ def vis_batch(batch, path, pic_id, text = []):
     else:
         plt.imsave(f'{path}/'+pic_id+'.png', reshaped.numpy(), dpi=1000)
 
+def gifify(batch, path, pic_id, text = []):
+    #print(batch.shape)
+
+    if len(batch.shape) == 4:
+        padded = F.pad(batch, (1,1,1,1), value=0.5)
+    elif len(batch.shape) == 5:
+        padded = F.pad(batch, (0,0,1,1,1,1), value=0.5)
+    else:
+        print("Unknown shape:", batch.shape)
+
+    if np.max(padded.numpy())>1.0:
+        padded = padded/256
+    os.makedirs(path, exist_ok=True)
+
+    frames = []
+    for f_id in range(padded.shape[1]):
+        frame = padded[:,f_id]
+        frame = T.cat([sample for sample in frame], dim=1)
+        if text:
+            text_height= 30
+            if len(frame.shape) == 2:
+                #frame = F.pad(frame, (0,0,text_height,0), value=0.0)
+                img = Image.fromarray(np.uint8(frame.numpy()*255), mode="L")
+            elif len(frame.shape) == 3:
+                #frame = F.pad(frame, (0,0,0,0,text_height,0), value=0.0)
+                img = Image.fromarray(np.uint8(frame.numpy()*255))
+            font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 9)
+            draw = ImageDraw.Draw(img)
+            for i, words in enumerate(text):
+                x, y = i*frame.shape[1]//len(text), 0
+                draw.text((x, y), words, fill=(0) if len(frame.shape)==2 else (0,0,0), font=font)
+        else:
+            if len(frame.shape) == 2:
+                img = Image.fromarray(np.uint8(frame.numpy()*255), mode="L")
+            elif len(frame.shape) == 3:
+                img = Image.fromarray(np.uint8(frame.numpy()*255))
+               
+        frames.append(img)
+        
+    frames[0].save(f'{path}/'+pic_id+'.gif', save_all=True, append_images=frames[1:], optimize=True, duration=200, loop=0)
+
+
 def prepare_data(data, size):
     targetchannel = 1
     X, Y = [], []
