@@ -146,13 +146,14 @@ if __name__ == "__main__":
     smart = '-smart' in sys.argv
 
     auccess = []
-    for eval_setup in ['ball_cross_template', 'ball_within_template']:
+    for eval_setup in ['ball_within_template', 'ball_cross_template']:
         auccess.append(eval_setup)
         for fold_id in range(3):
             if "-brute" in sys.argv:
                 solver = FlownetSolver(model_path, "brute", smart=smart)
             else:
                 solver = FlownetSolver(model_path, "pyramid", smart=smart)
+
             train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
 
             if "-load" in sys.argv:
@@ -190,10 +191,12 @@ if __name__ == "__main__":
             if "-solve" in sys.argv:
                 print(model_path, eval_setup, fold_id, "|| getting auccess...")
                 if "-brute" in sys.argv:
-                    auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
+                    local_auccess = solver.brute_auccess(test_ids+dev_ids)
+                    #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                     os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
                     with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
-                        handle.write(f"auccess: {auccess[-1]} \nepochs: 50")
+                        handle.write(f"auccess: {local_auccess} \nepochs: 50")
+                    auccess.append(local_auccess)
                 else:
                     auccess.append( get_auccess(solver, test_ids+dev_ids, solve_noise=True, save_tries=True) )
                     os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
