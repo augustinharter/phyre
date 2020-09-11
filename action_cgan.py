@@ -18,6 +18,7 @@ import cv2
 import pickle
 import os
 from itertools import chain
+from phyre_utils import vis_batch
 
 #%%
 if __name__ == "__main__":
@@ -30,6 +31,7 @@ if __name__ == "__main__":
     parser.add_argument('--data', default='',type=str)
     parser.add_argument('--verbose', default=10,type=int)
     parser.add_argument('--folds', default=0,type=int)
+    parser.add_argument('--load_disc', default='',type=str)
     parser.add_argument('-single', action='store_true')
     parser.add_argument('-genonly', action='store_true')
     parser.add_argument('-lindisc', action='store_true')
@@ -58,6 +60,8 @@ if __name__ == "__main__":
     with open(DATA_PATH, 'rb') as fs:
         X = T.tensor(pickle.load(fs), dtype=T.float)
     print('loaded dataset with shape:', X.shape)
+    #data_set = T.utils.data.TensorDataset(X.repeat(128,1,1,1))
+    #print('loaded dataset with shape:', X.repeat(128,1,1,1).shape)
     data_set = T.utils.data.TensorDataset(X)
     data_loader = T.utils.data.DataLoader(data_set, batch_size=BATCH_SIZE, shuffle=True)
 
@@ -233,6 +237,9 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
             disc_batch = batch[bh:2*bh].to(device)
         T.autograd.set_detect_anomaly(True)
 
+        #vis_batch(disc_batch, "result/test", "disc_batch")
+        #vis_batch(gen_batch, "result/test", "disc_batch")
+
         # Discriminator
         # Forward
         d_optimizer.zero_grad()
@@ -248,7 +255,7 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
             noise2 = T.randn(disc_batch.shape[0], generator2.noise_dim).to(device)
             primed_cond = disc_batch[:,:generator2.s_chan]
             primed_fake = generator2(primed_cond, noise2).detach()
-            fake_validity2 = discriminator2(T.cat((disc_batch[:,:discriminator2.s_chan], primed_fake), dim=1))
+            fake_validity2 = discriminator2(T.cat((disc_batch[:,:discriminator2.s_chan-1], primed_fake, disc_batch[:,None,discriminator2.s_chan-1]), dim=1))
             real_validity2 = discriminator2(disc_batch)
             disc_fake_loss2 = criterion(fake_validity2, T.zeros_like(fake_validity2))
             disc_real_loss2 = criterion(real_validity2, T.ones_like(real_validity2))
@@ -275,7 +282,7 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
             noise2 = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
             primed_cond = gen_batch[:,:generator2.s_chan]
             primed_fake = generator2(primed_cond, noise2)
-            gen_validity2 = discriminator2(T.cat((disc_batch[:,:discriminator2.s_chan], primed_fake), dim=1))
+            gen_validity2 = discriminator2(T.cat((disc_batch[:,:discriminator2.s_chan-1], primed_fake, disc_batch[:,None,discriminator2.s_chan-1]), dim=1))
             gen_loss2 = criterion(gen_validity2, T.ones_like(gen_validity2))
             gen_loss = gen_loss + gen_loss2
         # Backward
@@ -334,14 +341,16 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
     s = cond_batch.cpu()
 
     # composing original scene    
-    green = np.max(np.stack((0.5*s[:,0],s[:,1],0.5*s[:,2]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    blue = s[:,3].reshape(num_cells,1,wid,wid)
-    red = np.max(np.stack((0.5*actions[:,0],actions[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    orig = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
+    back = s[:,3].reshape(num_cells,1,wid,wid).numpy()
+    #print(s[:,0].shape)
+    green = np.max(np.stack((0.5*s[:,0],s[:,1],0.5*s[:,2],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    red = np.max(np.stack((0.5*actions[:,0],actions[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    orig = np.pad(np.concatenate((red, green, back), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
 
     # composing scene with generated action
-    red = np.max(np.stack((0.1*g[:,0],0.5*g[:,1]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    gen = np.pad(np.concatenate((red, green, blue), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
+    red = np.max(np.stack((g[:,0],0*g[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    red2 = np.max(np.stack((0*g[:,0],g[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    gen = np.pad(np.concatenate((red, green, red2), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
     #print(combined)
     combined = np.concatenate((orig, gen), axis=1).reshape(2*num_cells,3,wid+2,wid+2)
     grid = make_grid(T.tensor(combined), nrow=8, normalize=True)
@@ -391,6 +400,12 @@ if __name__ == "__main__":
             models['generator2'] = generator2
             models['discriminator2'] = discriminator2
         load_models(models, SAVE_PATH)
+
+    if args.load_disc!='':
+        models = {'discriminator': discriminator}
+        if args.sequ:
+            models['discriminator2'] = discriminator2
+        load_models(models, BASE_PATH+args.load_disc)
         
     # Training
     if not ONLY_GENERATE:

@@ -730,8 +730,8 @@ if __name__ == "__main__":
     template13_tasks = [t for t in all_tasks if t.startswith('00013:')]
     template2_tasks = [t for t in all_tasks if t.startswith('00002:')]
     first_5_templates = [t for t in all_tasks if t.startswith('00000:') or t.startswith('00001:') or t.startswith('00002:') or t.startswith('00003:') or t.startswith('00004:')]
-    selected_tasks = first_5_templates
+    selected_tasks = [template2_tasks[0]]
     #print(template2_tasks)
     #collect_specific_channel_paths(f'./data/template13_action_paths_10x', template13_tasks, 0)
-    collect_interactions(f'./data/all_task_interactions/first_5_64fromcentered128', selected_tasks[::-1], 2, size=(64,64), show=False, static=128)
+    collect_interactions(f'./data/all_task_interactions/template_2_overfit', selected_tasks[::-1], 1, size=(64,64), show=False, static=128)
     #visualize_interactions('result/trajectories/samples', template2_tasks[:10], 1)
