@@ -525,11 +525,12 @@ class FullyConnected(nn.Module):
 class FlownetSolver():
     def __init__(self, path:str, modeltype:str, eval_only=False, smart = False):
         super().__init__()
+        self.device = "cuda" if T.cuda.is_available() else "cpu"
         self.path = path
         self.width = 32
         self.modeltype = modeltype
         self.discr = None
-        self.r_fac = 1.2
+        self.r_fac = 1
 
         pyramid = SmartPyramid if smart else Pyramid
 
@@ -620,19 +621,21 @@ class FlownetSolver():
 
         return actions
 
-    def generative_auccess(self, tasks):
+    def generative_auccess_old(self, tasks):
         sim = phyre.initialize_simulator(tasks, 'ball')
         all_initial_scenes = T.tensor([[cv2.resize((scene==channel).astype(float), (32,32)) for channel in range(2,7)] for scene in sim.initial_scenes]).float().flip(-2)
         eva = phyre.Evaluator(tasks)
 
         self.to_eval()
         actions = np.zeros((len(tasks), 3))
-        pipelines = T.zeros(len(tasks),)
+        pipelines = []
         num_batches = 1+len(tasks)//64
         for batch in range(num_batches):
-            init_scenes = initial_scenes[batch*64:64*(batch+1)]
+            init_scenes = all_initial_scenes[batch*64:64*(batch+1)]
             #emb_init_scenes = F.embedding(T.tensor(batch_scenes), T.eye(phyre.NUM_COLORS)).transpose(-1,-3)[:,1:6].float()
             #print(init_scenes.equal(emb_init_scenes))
+
+            # FORWARD PASS
             with T.no_grad():
                 base_paths = self.base_net(init_scenes)
                 target_paths = self.tar_net(init_scenes)
@@ -641,41 +644,208 @@ class FlownetSolver():
                 print_batch = T.cat((init_scenes, base_paths, target_paths, action_paths, action_balls), dim=1)
                 #text = ['green\nball GT', 'blue GT\ndynamic', 'blue GT\nstatic', 'grey', 'black', 'base\npred', 'target\npred', 'action\npred', 'a-ball\npred']
                 #vis_batch(print_batch, f'result/flownet/solver/{self.path}', f'{batch}', text=text)
-            batch_task = tasks[64*batch:64*(batch+1)]
+
+            batch_tasks = tasks[64*batch:64*(batch+1)]
             os.makedirs(f'result/solver/generative/', exist_ok=True)
             for idx, ball in enumerate(action_balls[:,0]):
-                task = batch_task[idx]
+                task = batch_tasks[idx]
 
                 # CHOOSE ONE VECTOR EXTRACTION METHOD
                 #a = pic_to_action_vector(ball, r_fac=1.5)
-                a = grow_action_vector(ball, r_fac =self.r_fac)
-                print(a)
-
+                a = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = 5)
+                #print(a)
                 drawn = draw_ball(32, *a, invert_y = True)
+                x,y,r = str(round(a[0], 2)), str(round(a[1], 2)), str(round(a[2], 2))
+
+                """
                 pure_scene = T.as_tensor(np.max(print_batch[idx,[0,1,2,3,4]].numpy(), axis=0))
                 scene_with_estimate = T.as_tensor(np.max(print_batch[idx,[0,1,2,3,4,-1]].numpy(), axis=0))
                 scene_with_injected = T.as_tensor(np.max(T.stack((scene_with_estimate, drawn), dim=0).numpy(), axis=0))
                 init_with_injected = T.as_tensor(np.max(T.cat((init_scenes[idx], drawn[None]), dim=0).numpy(), axis=0))
-                #print(print_batch[idx].shape)
-                #print(scene_with_estimate[None].shape)
-                #print(scene_with_injected[None].shape)
-                #print(init_with_injected[None].shape)
                 pipeline = T.cat((print_batch[idx], scene_with_estimate[None], pure_scene[None], scene_with_injected[None], init_with_injected[None]), dim=0)
                 
                 text = ['green\nball GT', 'blue GT\ndynamic', 'blue GT\nstatic', 'grey', 'black', 'full\nscene', 'base\npred', 'target\npred', 'action\npred', 'a-ball\npred','action\nestimate', 'estimate\n/w action','   final\n   action']
                 x,y,r = round(a[0], 3), round(a[1], 3), round(a[2], 3)
-                vis_batch(pipeline[None], f'result/solver/generative', f"{task}__{str(a)}", text = text)
-                #plt.imsave(f'result/solver/pyramid/{task}___{(x,y,r)}.png', draw_ball(32, *a, invert_y = True))
-                # Radius times 4
+                vis_batch(pipeline[None], f'result/flownet/solving/generative', f"{task}__{str(a)}", text = text)
+                """
+                
+                back = init_scenes[None,idx,3:].sum(dim=1)[:,None]
+                back = back/max(back.max(),1)
+                inits = init_scenes[None,idx,None]
+                vis_line = T.cat((
+                    T.stack((back, inits[:,:,0]+back, inits[:,:,1]+inits[:,:,2]+back),dim=-1), # inital scene
+                    T.stack((back, base_paths[idx,None]+back, inits[:,:,1]+inits[:,:,2]+back),dim=-1), # scene with base
+                    T.stack((action_paths[idx,None]+back, target_paths[idx,None]+back, inits[:,:,1]+inits[:,:,2]+back),dim=-1), # scene with action path and target
+                    T.stack((action_balls[idx,None]+back, inits[:,:,0]+back, inits[:,:,1]+inits[:,:,2]+back),dim=-1), #scene with action ball
+                    T.stack((drawn[None,None]+back, inits[:,:,0]+back, inits[:,:,1]+inits[:,:,2]+back),dim=-1)), 
+                    dim=1).detach()
+                text = ['initial\nscene', 'base\nscene', 'scene\npredict', 'action\npredict', f'injected\nx {x[1:]} y {y[1:]}\nr {r[1:]}']
+                vis_line = self.cut_off(vis_line.cpu())
+                vis_line = vis_batch(vis_line, f'result/flownet/solving/{self.path}', f"{task}", text = text, save=False)
+
+                #pipelines.append(vis_line)
+                
+                # Radius times 4 since actions are scaled this way (and times 2 to get diameter??)
                 a[2] = a[2]*4
-                #img = np.max(print_batch[idx,[0,1,2,3,4,-1]].numpy(), axis=0)
-                #plt.imsave(f'result/solver/pyramid/{task}__{str(a)}.png', img)
-                print(a)
+                #print(a)
+                # saving action
                 actions[idx+batch*64] = a
+
+
+                # SIMULATING ACTION
+                # vis setup
+                vis_count = 0
+                vis_max_count = 9
+                vis_wid = 64
+                vis_text_actions = []
+                gif_stack = T.zeros(vis_max_count+1,10,vis_wid,vis_wid, 3)
+
+                # setup for simulation
+                action = a
+                delta_generator = action_delta_generator()
+                task_idx = tasks.index(task)
+
+                # First try:
+                res = sim.simulate_action(task_idx, action)  
+                eva.maybe_log_attempt(task_idx, res.status)
+
+                t = 0
+                base_action = action.copy()
+                while True:
+
+                    #GIFIFY if VALID attempt
+                    if not res.status.is_invalid() and vis_count<vis_max_count:
+                        for i in range(min(len(res.images), 10)):
+                            gif_stack[vis_count,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
+                        vis_text_actions.append(str(np.round(action, decimals=2)))
+                        vis_count +=1
+                    
+                    # Check if SOLVED
+                    if res.status.is_solved():
+
+                        # GIFIFY
+                        for i in range(min(len(res.images), 10)):
+                            gif_stack[vis_max_count,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
+                        while len(vis_text_actions)<vis_max_count:
+                            vis_text_actions.append('')
+                        vis_text_actions.append(str(np.round(action, decimals=2))+f"\ntry {eva.attempts_per_task_index[task_idx]}")
+
+                        print()
+                        print(f"{task} solved after", eva.attempts_per_task_index[task_idx])
+                        # loop untill 100 actions:
+                        while eva.attempts_per_task_index[task_idx]<100:
+                            eva.maybe_log_attempt(task_idx, res.status)
+                    else:
+                        # Try NEXT ATTEMPT:
+                        if t<1000:
+                            delta = delta_generator.__next__()
+                            action = base_action + delta
+                            print("detla:", delta, end='\r')
+                            res = sim.simulate_action(task_idx, action,  need_featurized_objects=False)
+                            eva.maybe_log_attempt(task_idx, res.status)
+                            t += 1
+                        else:
+                            print(f"WARNING can't find valid action for {task}")
+                            warning_flag = True
+                            error = True
+                            eva.maybe_log_attempt(task_idx, phyre.SimulationStatus.NOT_SOLVED)
+                    
+                    # check if enough attempts
+                    if eva.attempts_per_task_index[task_idx]>=100:
+                        # GIFIFY the gif_stack
+                        if not res.status.is_solved():
+                            vis_text_actions.append('')
+                            print()
+                            print(f"{task} not solved")
+                        gifify(gif_stack, f'result/flownet/solving/{self.path}', f'{task}_tries', text = vis_text_actions, constant=vis_line)
+                        # break out and continue with next task:
+                        break
 
         #print(list(zip(tasks,actions)))
 
-        return actions
+    def generative_auccess(self, eval_setup, fold, train_mode='CONS', epochs=1):
+        self.to_train()
+        data_loader = self.test_dataloader
+        tar_net = self.tar_net
+        base_net = self.base_net
+        act_net = self.act_net
+        ext_net = self.ext_net
+
+        for epoch in range(epochs):
+            for i, (X,) in enumerate(data_loader):
+                X = X.to_device(self.device)
+                # Prepare Data
+                action_balls = X[:,0]
+                init_scenes = X[:,1:6]
+                base_paths = X[:,6]
+                target_paths = X[:,7]
+                goal_paths = X[:,8]
+                action_paths = X[:,9]
+
+                # Optional visiualization of batch data
+                #print(init_scenes.shape, target_paths.shape, action_paths.shape, base_paths.shape)
+                #vis_batch(X, f'data/flownet', f'{epoch}_{i}')
+
+                # FORWARD PASS
+                with T.no_grad():
+                    if train_mode=='MIX':
+                        modus = random.choice(['GT', 'COMB', 'CONS', 'END'])
+                    else:
+                        modus = train_mode
+
+                    # Forward Pass
+                    target_pred = tar_net(init_scenes)
+                    base_pred = base_net(init_scenes)
+                    if modus=='GT':
+                        action_pred = act_net(T.cat((init_scenes, target_paths[:,None], base_paths[:,None]), dim=1))
+                        ball_pred = ext_net(T.cat((init_scenes, target_paths[:,None], action_paths[:,None]), dim=1))
+                    elif modus=='CONS':
+                        action_pred = act_net(T.cat((init_scenes, target_pred.detach(), base_pred.detach()), dim=1))
+                        ball_pred = ext_net(T.cat((init_scenes, target_pred.detach(), action_pred.detach()), dim=1))
+                    elif modus=='COMB':
+                        action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
+                        ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
+                    elif modus=='END':
+                        action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
+                        ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
+                    
+
+                # VISUALIZATION
+                os.makedirs(f'result/flownet/inspect/{self.path}', exist_ok=True)
+                Z = X.cpu()
+                vis_batch(T.stack((Z, T.zeros_like(Z), T.zeros_like(Z)), dim=-1), "result/test", "color", text=["hello!"])
+
+                print_batch = T.cat((X, base_pred, target_pred, action_pred, ball_pred), dim=1).detach()
+                text = ['red', 'green', 'blue', 'blue', 'grey', 'black', 'base', 'target', 'goal\nnot used', 'action', 'base', 'target', 'action', 'red ball']
+                vis_batch(print_batch.cpu(), f'result/flownet/inspect/{self.path}/{eval_setup}_fold_{fold}', f'poch_{epoch}_{i}', text=text)
+
+                #sum_batch = T.cat((base_paths[:,None]+base_pred, target_paths[:,None]+target_pred, action_paths[:,None]+action_pred, action_balls[:,None]+ball_pred), dim=1).detach().abs()/2
+                #text = ['base\npaths', 'target\npaths', 'action\npaths', 'action\nballs']
+                #vis_batch(sum_batch.cpu(), f'result/flownet/inspect/{self.path}/{eval_setup}_fold_{fold}', f'poch_{epoch}_{i}_sum', text=text)
+    
+                # Extract action and draw:
+                drawings = T.zeros_like(ball_pred)
+                print("drawing balls for batch", i)
+                for b_idx, ball in enumerate(ball_pred[:,0].cpu()):
+                    a = grow_action_vector(ball, r_fac =self.r_fac)
+                    #print(a)
+                    drawn = draw_ball(32, *a, invert_y = True)
+                    drawings[b_idx, 0] = drawn 
+
+                background = init_scenes[:,3:].sum(dim=1)[:,None]
+                background = background/max(background.max(), 1)
+                diff_batch = T.cat((
+                    T.stack((background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
+                    T.stack((base_pred, base_paths[:,None], T.zeros_like(base_pred)),dim=-1), 
+                    T.stack((target_pred, target_paths[:,None], T.zeros_like(target_pred)),dim=-1), 
+                    T.stack((action_pred, action_paths[:,None], T.zeros_like(action_pred)),dim=-1), 
+                    T.stack((ball_pred, action_balls[:,None], T.zeros_like(ball_pred)),dim=-1),
+                    T.stack((ball_pred+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
+                    T.stack((drawings+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
+                    T.stack((action_balls[:,None]+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)), 
+                    dim=1).detach()
+                text = ['initial\nscene', 'base\npaths', 'target\npaths', 'action\npaths', 'action\nballs', 'overlay\nscene', 'injected\n scene', 'GT\nscene']
+                vis_batch(self.cut_off(diff_batch.cpu()), f'result/flownet/inspect/{self.path}/{eval_setup}_fold_{fold}', f'poch_{epoch}_{i}_diff', text=text)
 
     def brute_searched_actions(self, tasks, all_initial_scenes):
         cache = phyre.get_default_100k_cache('ball')
@@ -684,7 +854,7 @@ class FlownetSolver():
         solutions = np.zeros((len(tasks), 100, 3))
         
         self.to_train()
-        all_initial_scenes = all_initial_scenes.cuda()
+        all_initial_scenes = all_initial_scenes.to_device(self.device)
 
         # pre-compute bases
         with T.no_grad():
@@ -709,7 +879,7 @@ class FlownetSolver():
                 action_pics = T.zeros(len(action_batch), 1, self.width, self.width)
                 for k, action_vector in enumerate(action_batch):
                     action_pics[k,0] = draw_ball(self.width, *action_vector, invert_y = True)
-                action_pics = action_pics.cuda()
+                action_pics = action_pics.to_device(self.device)
 
                 with T.no_grad():
                     base_paths = self.base_net(T.cat((action_pics, init_scenes), dim=1))
@@ -739,7 +909,7 @@ class FlownetSolver():
         #vis_batch(all_initial_scenes, "result/test", "initial_scenes_vis")
         
         self.to_train()
-        all_initial_scenes = all_initial_scenes.cuda()
+        all_initial_scenes = all_initial_scenes.to_device(self.device)
 
         # loop through tasks
         for j, task in enumerate(tasks):
@@ -758,21 +928,23 @@ class FlownetSolver():
                 # generate action pics from vectors
                 action_pics = T.zeros(len(action_batch), 1, self.width, self.width)
                 for k, action_vector in enumerate(action_batch):
-                    action_vector[2] *= 0.25
-                    action_pics[k,0] = draw_ball(self.width, *action_vector, invert_y = True)
-                action_pics = action_pics.cuda()
+                    x,y,r = action_vector
+                    action_pics[k,0] = draw_ball(self.width, x, y, r*0.125, invert_y = True)
+                action_pics = action_pics.to_device(self.device)
 
                 with T.no_grad():
                     base_paths = self.base_net(T.cat((action_pics, init_scenes), dim=1))
                     action_paths = self.act_net(T.cat((action_pics, init_scenes, base_paths), dim=1))
                     target_paths = self.tar_net(T.cat((action_pics, init_scenes, base_paths, action_paths), dim=1))
                     confidence = self.ext_net(T.cat((action_pics, init_scenes, base_paths, action_paths, target_paths), dim=1))
-                
                 confs[i*bs:(i+1)*bs] = confidence[:,0]
             
             conf_args = T.argsort(confs, descending=True)
-            #print(conf_args[:100])
-            #print(actions[conf_args[:100]])
+            sorted_conf = T.sort(confs, descending=True)
+            print("CONF ARGS", conf_args[:50])
+            print("CONF", sorted_conf[:50])
+            print("ACTIONS:", actions[conf_args[:50]])
+            print("CACHE RESULTS:", cache.load_simulation_states(task)[conf_args[:50]])
             best_actions = actions[conf_args[:150]]
             solutions[j] = best_actions
 
@@ -780,75 +952,81 @@ class FlownetSolver():
             #print(f"visualizing best actions for task {task}", end='\r')
             action_batch = best_actions
             repeated_initial_scenes = all_initial_scenes[j].repeat(len(action_batch),1,1,1)
-            init_scenes = repeated_initial_scenes[:len(action_batch)]
+            init_scenes = repeated_initial_scenes
             #base_paths = repeated_base_paths[:len(action_batch)]
             # generate action pics from vectors
             action_pics = T.zeros(len(action_batch), 1, self.width, self.width)
             for k, action_vector in enumerate(action_batch):
-                action_vector[2] *= 0.25
-                action_pics[k,0] = draw_ball(self.width, *action_vector, invert_y = True)
-            action_pics = action_pics.cuda()
+                x,y,r = action_vector
+                action_pics[k,0] = draw_ball(self.width, x, y, r*0.125, invert_y = True)
+            action_pics = action_pics.to_device(self.device)
 
             with T.no_grad():
                 base_paths = self.base_net(T.cat((action_pics, init_scenes), dim=1))
                 action_paths = self.act_net(T.cat((action_pics, init_scenes, base_paths), dim=1))
                 target_paths = self.tar_net(T.cat((action_pics, init_scenes, base_paths, action_paths), dim=1))
+                #init_scenes = T.cat((T.ones_like(init_scenes)[:10], init_scenes[10:]), dim=0)
                 confidence = self.ext_net(T.cat((action_pics, init_scenes, base_paths, action_paths, target_paths), dim=1))
 
                 os.makedirs(f'result/flownet/solver/{self.path}', exist_ok=True)
+                #print("conf",confidence[:20])
                 print_batch = T.cat((init_scenes, base_paths, target_paths, action_paths, T.ones_like(base_paths)*confidence[:,:,None,None]), dim=1).detach()
                 text = ['red GT', 'green GT', 'blue GT', 'blue GT', 'grey GT', 'black GT', 'base\npath pred', 'target\npath pred', 'action\npath pred', 'conf']
                 vis_batch(print_batch.cpu(), f'result/flownet/solving/{self.path}', f'{task}_best_actions', text=text)
 
 
                 background = init_scenes[:,4:].sum(dim=1)[:,None]
-                background = background/background.max()
+                background = background/max(background.max(),1)
                 tmp_conf = T.ones_like(base_paths)*confidence[:,:,None,None]
                 scene = T.stack((action_pics+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)
                 green_target = T.stack((T.zeros_like(target_paths), target_paths, T.zeros_like(target_paths)),dim=-1)
                 red_target = T.stack((action_paths, T.zeros_like(action_paths), T.zeros_like(action_paths)),dim=-1)
                 diff_batch = T.cat((
-                    scene,  
+                    scene,
                     scene+green_target+red_target,
                     T.stack((tmp_conf,tmp_conf,tmp_conf),dim=-1)),
                     dim=1).detach()
-                text = ['scene','predicted\”scene', 'confidence']
+                text = ['scene','scene\nprediction', 'confidence']
                 vis_batch(self.cut_off(diff_batch.cpu()), f'result/flownet/solving/{self.path}', f'{task}_best_actions_diff', text=text)
 
-                # EVALUATION
-                vis_count = 0
-                vis_wid = 64
-                vis_actions = []
-                gif_stack = T.zeros(6,10,vis_wid,vis_wid, 3)
-                for action in best_actions:
-                    if eva.attempts_per_task_index[j]>=100:
-                        # GIFIFY
-                        if not res.status.is_solved():
-                            vis_actions.append('')
-                            print()
-                            print(f"{task} not solved")
-                        gifify(gif_stack, f'result/flownet/solving/{self.path}', f'{task}_tries_gif', text = vis_actions)
-                        break
-                    res = sim.simulate_action(j, action)  
-                    eva.maybe_log_attempt(j, res.status)
-
-                    #GIFIFY
-                    if not res.status.is_invalid() and vis_count<5:
-                        for i in range(min(len(res.images), 10)):
-                            gif_stack[vis_count,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
-                        vis_actions.append(str(np.round(action, decimals=2)))
-                        vis_count +=1
-
-                    if res.status.is_solved():
-                        # GIFIFY
-                        for i in range(min(len(res.images), 10)):
-                            gif_stack[5,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
-                        vis_actions.append(str(np.round(action, decimals=2)))
-
+            # EVALUATION
+            vis_count = 0
+            vis_max_count = 5
+            vis_wid = 64
+            vis_text_actions = []
+            constant = vis_batch(self.cut_off(diff_batch.cpu()[:vis_max_count]), f'result/flownet/solving/{self.path}', f'{task}_best_actions_diff', text=text, save=False)
+            gif_stack = T.zeros(vis_max_count+1,10,vis_wid,vis_wid, 3)
+            for action in best_actions:
+                if eva.attempts_per_task_index[j]>=100:
+                    # GIFIFY
+                    if not res.status.is_solved():
+                        vis_text_actions.append('')
                         print()
-                        print(f"{task} solved after", eva.attempts_per_task_index[j])
-                        while eva.attempts_per_task_index[j]<100:
-                            eva.maybe_log_attempt(j, res.status)
+                        print(f"{task} not solved")
+                    gifify(gif_stack, f'result/flownet/solving/{self.path}', f'{task}_tries_gif', text = vis_text_actions, constant=constant)
+                    break
+                res = sim.simulate_action(j, action)  
+                eva.maybe_log_attempt(j, res.status)
+
+                #GIFIFY
+                if not res.status.is_invalid() and vis_count<vis_max_count:
+                    for i in range(min(len(res.images), 10)):
+                        gif_stack[vis_count,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
+                    vis_text_actions.append(str(np.round(action, decimals=2)))
+                    vis_count +=1
+
+                if res.status.is_solved():
+                    # GIFIFY
+                    for i in range(min(len(res.images), 10)):
+                        gif_stack[5,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
+                    while len(vis_text_actions)<vis_max_count:
+                        vis_text_actions.append('')
+                    vis_text_actions.append(str(np.round(action, decimals=2))+f"\ntry {eva.attempts_per_task_index[j]}")
+
+                    print()
+                    print(f"{task} solved after", eva.attempts_per_task_index[j])
+                    while eva.attempts_per_task_index[j]<100:
+                        eva.maybe_log_attempt(j, res.status)
 
         print("AUCCES", eva.get_auccess())
         return eva.get_auccess()
@@ -869,18 +1047,18 @@ class FlownetSolver():
             test_ids = dev_ids + test_ids
 
         if not test:
-            self.train_dataloader, index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n", 
+            self.train_dataloader, self.train_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n", 
                 size=(width,width), tasks=train_ids[:], batch_size=batchsize//2 if brute_search else batchsize, n_per_task=n_per_task, shuffle=shuffle)
         else:
-            self.test_dataloader, index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_test_{width}xy_{n_per_task}n", 
-                size=(width,width), tasks=test_ids, n_per_task=n_per_task)
+            self.test_dataloader, self.test_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_test_{width}xy_{n_per_task}n", 
+                size=(width,width), tasks=test_ids, n_per_task=n_per_task, shuffle=False)
         if brute_search:
             if not test:
-                self.failed_dataloader, index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_train_{width}xy_{n_per_task}n", 
+                self.failed_dataloader, self.failed_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_train_{width}xy_{n_per_task}n", 
                     size=(width,width), tasks=train_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task, shuffle=shuffle)
             else:
-                self.failed_test_dataloader, index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_test_{width}xy_{n_per_task}n", 
-                    size=(width,width), tasks=test_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task, shuffle=shuffle)
+                self.failed_test_dataloader, self.failed_test_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_test_{width}xy_{n_per_task}n", 
+                    size=(width,width), tasks=test_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task, shuffle=False)
         os.makedirs(f'result/flownet/training/{self.path}', exist_ok=True)
         with open(f'result/flownet/training/{self.path}/namespace.txt', 'w') as handle:
             handle.write(f"{self.modeltype} {setup} {fold}")
@@ -901,7 +1079,7 @@ class FlownetSolver():
 
         for epoch in range(epochs):
             for i, (X,) in enumerate(data_loader):
-                X = X.cuda()
+                X = X.to_device(self.device)
                 # Prepare Data
                 action_balls = X[:,0]
                 init_scenes = X[:,1:6]
@@ -946,7 +1124,7 @@ class FlownetSolver():
                     #vis_batch(sum_batch.cpu(), f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}_sum', text=text)
 
                     background = init_scenes[:,3:].sum(dim=1)[:,None]
-                    background = background/background.max()
+                    background = background/max(background.max(),1)
                     diff_batch = T.cat((
                         T.stack((background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
                         T.stack((base_pred, base_paths[:,None], T.zeros_like(base_pred)),dim=-1), 
@@ -994,7 +1172,7 @@ class FlownetSolver():
         for epoch in range(epochs):
             for i, ((X,), (Z,)) in enumerate(zip(data_loader, fail_loader)):
                 last_index = min(X.shape[0], Z.shape[0])
-                X, Z = X[:last_index].cuda(), Z[:last_index].cuda()
+                X, Z = X[:last_index].to_device(self.device), Z[:last_index].to_device(self.device)
 
                 # Prepare Data
                 solve_scenes = X[:,:6]
@@ -1045,7 +1223,7 @@ class FlownetSolver():
                     vis_batch(print_batch.cpu(), f'result/flownet/training/{self.path}', f'poch_{epoch}_{i}', text=text)
 
                     background = init_scenes[:,4:].sum(dim=1)[:,None]
-                    background = background/background.max()
+                    background = background/max(background.max(),1)
                     tmp_conf = T.ones_like(base_pred)*confidence[:,:,None,None]
                     diff_batch = T.cat((
                         T.stack((init_scenes[:,None,0]+background, init_scenes[:,None,1]+background, init_scenes[:,None,2]+init_scenes[:,None,3]+background),dim=-1), 
@@ -1061,7 +1239,7 @@ class FlownetSolver():
                 # Loss
                 tar_loss = F.binary_cross_entropy(target_pred, target_paths[:,None])
                 act_loss = F.binary_cross_entropy(action_pred, action_paths[:,None])
-                conf_target = T.cat((T.ones(X.shape[0]), T.zeros(Z.shape[0])), dim=0).cuda()
+                conf_target = T.cat((T.ones(X.shape[0]), T.zeros(Z.shape[0])), dim=0).to_device(self.device)
                 conf_loss = F.binary_cross_entropy(confidence[:,0], conf_target)
                 base_loss = F.binary_cross_entropy(base_pred, base_paths[:,None])
                 if modus=='END':
@@ -1085,7 +1263,7 @@ class FlownetSolver():
 
         for epoch in range(epochs):
             for i, (X,) in enumerate(data_loader):
-                X = X.cuda()
+                X = X.to_device(self.device)
                 # Prepare Data
                 action_balls = X[:,0]
                 init_scenes = X[:,1:6]
@@ -1098,6 +1276,7 @@ class FlownetSolver():
                 #print(init_scenes.shape, target_paths.shape, action_paths.shape, base_paths.shape)
                 #vis_batch(X, f'data/flownet', f'{epoch}_{i}')
 
+                # FORWARD PASS
                 with T.no_grad():
                     if train_mode=='MIX':
                         modus = random.choice(['GT', 'COMB', 'CONS', 'END'])
@@ -1120,6 +1299,8 @@ class FlownetSolver():
                         action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
                         ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
                     
+
+                # VISUALIZATION
                 os.makedirs(f'result/flownet/inspect/{self.path}', exist_ok=True)
                 Z = X.cpu()
                 vis_batch(T.stack((Z, T.zeros_like(Z), T.zeros_like(Z)), dim=-1), "result/test", "color", text=["hello!"])
@@ -1133,15 +1314,16 @@ class FlownetSolver():
                 #vis_batch(sum_batch.cpu(), f'result/flownet/inspect/{self.path}/{eval_setup}_fold_{fold}', f'poch_{epoch}_{i}_sum', text=text)
     
                 # Extract action and draw:
-                drawings = T.zeros_like(ball_pred[:,0])
-                for b_idx, ball in enumerate(ball_pred):
+                drawings = T.zeros_like(ball_pred)
+                print("drawing balls for batch", i)
+                for b_idx, ball in enumerate(ball_pred[:,0].cpu()):
                     a = grow_action_vector(ball, r_fac =self.r_fac)
                     #print(a)
                     drawn = draw_ball(32, *a, invert_y = True)
                     drawings[b_idx, 0] = drawn 
 
                 background = init_scenes[:,3:].sum(dim=1)[:,None]
-                background = background/background.max()
+                background = background/max(background.max(),1)
                 diff_batch = T.cat((
                     T.stack((background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
                     T.stack((base_pred, base_paths[:,None], T.zeros_like(base_pred)),dim=-1), 
@@ -1152,7 +1334,7 @@ class FlownetSolver():
                     T.stack((drawings+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
                     T.stack((action_balls[:,None]+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)), 
                     dim=1).detach()
-                text = ['initial\nscene', 'base\npaths', 'target\npaths', 'action\npaths', 'action\nballs', 'injected\nscene', 'GT\nscene']
+                text = ['initial\nscene', 'base\npaths', 'target\npaths', 'action\npaths', 'action\nballs', 'overlay\nscene', 'injected\n scene', 'GT\nscene']
                 vis_batch(self.cut_off(diff_batch.cpu()), f'result/flownet/inspect/{self.path}/{eval_setup}_fold_{fold}', f'poch_{epoch}_{i}_diff', text=text)
 
     def inspect_brute_search(self, eval_setup, fold, train_mode='CONS', epochs=1):
@@ -1167,7 +1349,7 @@ class FlownetSolver():
         for epoch in range(epochs):
             for i, ((X,), (Z,)) in enumerate(zip(data_loader, fail_loader)):
                 last_index = min(X.shape[0], Z.shape[0])
-                X, Z = X[:last_index].cuda(), Z[:last_index].cuda()
+                X, Z = X[:last_index].to_device(self.device), Z[:last_index].to_device(self.device)
 
                 # Prepare Data
                 solve_scenes = X[:,:6]
@@ -1217,7 +1399,7 @@ class FlownetSolver():
                 vis_batch(print_batch.cpu(), f'result/flownet/inspect/{self.path}/brute_{eval_setup}_fold_{fold}', f'poch_{epoch}_{i}', text=text)
 
                 background = init_scenes[:,4:].sum(dim=1)[:,None]
-                background = background/background.max()
+                background = background/max(background.max(),1)
                 tmp_conf = T.ones_like(base_pred)*confidence[:,:,None,None]
                 diff_batch = T.cat((
                     T.stack((init_scenes[:,None,0]+background, init_scenes[:,None,1]+background, init_scenes[:,None,2]+init_scenes[:,None,3]+background),dim=-1), 
@@ -1240,10 +1422,10 @@ class FlownetSolver():
         self.ext_net.eval()
     
     def to_train(self):
-        self.tar_net = self.tar_net.cuda()
-        self.base_net = self.base_net.cuda()
-        self.act_net = self.act_net.cuda()
-        self.ext_net = self.ext_net.cuda()
+        self.tar_net = self.tar_net.to_device(self.device)
+        self.base_net = self.base_net.to_device(self.device)
+        self.act_net = self.act_net.to_device(self.device)
+        self.ext_net = self.ext_net.to_device(self.device)
         self.tar_net.train()
         self.base_net.train()
         self.act_net.train()

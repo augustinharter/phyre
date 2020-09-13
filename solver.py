@@ -50,7 +50,7 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False)
             # Refining if invalid Action
             t = 0
             temp = 1
-            base_action = action
+            base_action = action.copy()
             print(base_action, 'base action')     
             # Checking for valid action
             while res.status.is_invalid():
@@ -198,10 +198,18 @@ if __name__ == "__main__":
                         handle.write(f"auccess: {local_auccess} \nepochs: 50")
                     auccess.append(local_auccess)
                 else:
+                    local_auccess = solver.generative_auccess_old(test_ids+dev_ids)
+                    #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
+                    os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
+                    with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
+                        handle.write(f"auccess: {local_auccess} \nepochs: 50")
+                    auccess.append(local_auccess)
+                    """
                     auccess.append( get_auccess(solver, test_ids+dev_ids, solve_noise=True, save_tries=True) )
                     os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
                     with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
                         handle.write(f"auccess: {auccess[-1]} \nepochs: 50")
+                    """
 
             """
             all_tasks = train_ids+dev_ids+test_ids

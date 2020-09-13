@@ -65,7 +65,7 @@ def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=Tru
     dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), batch_size, shuffle=shuffle)
     return dataloader, index
 
-def vis_batch(batch, path, pic_id, text = []):
+def vis_batch(batch, path, pic_id, text = [], save=True):
     #print(batch.shape)
 
     if len(batch.shape) == 4:
@@ -82,7 +82,7 @@ def vis_batch(batch, path, pic_id, text = []):
         reshaped = reshaped/256
     os.makedirs(path, exist_ok=True)
     if text:
-        text_height= 30
+        text_height= 40
         if len(reshaped.shape) == 2:
             reshaped = F.pad(reshaped, (0,0,text_height,0), value=0.0)
             img = Image.fromarray(np.uint8(reshaped.numpy()*255), mode="L")
@@ -94,11 +94,17 @@ def vis_batch(batch, path, pic_id, text = []):
         for i, words in enumerate(text):
             x, y = i*reshaped.shape[1]//len(text), 0
             draw.text((x, y), words, fill=(255) if len(reshaped.shape)==2 else (255,255,255), font=font)
-        img.save(f'{path}/'+pic_id+'.png')
+        if save:
+            img.save(f'{path}/'+pic_id+'.png')
+        else:
+            return img
     else:
-        plt.imsave(f'{path}/'+pic_id+'.png', reshaped.numpy(), dpi=1000)
+        if save:
+            plt.imsave(f'{path}/'+pic_id+'.png', reshaped.numpy(), dpi=1000)
+        else:
+            return reshaped
 
-def gifify(batch, path, pic_id, text = []):
+def gifify(batch, path, pic_id, text = [], constant=None):
     #print(batch.shape)
 
     if len(batch.shape) == 4:
@@ -135,9 +141,16 @@ def gifify(batch, path, pic_id, text = []):
             elif len(frame.shape) == 3:
                 img = Image.fromarray(np.uint8(frame.numpy()*255))
                
+        if constant is not None:
+            dst = Image.new('RGB', (img.width, img.height + constant.height))
+            dst.paste(constant, (0, 0))
+            dst.paste(img, (0, constant.height))
+
+            img = dst
+            
         frames.append(img)
         
-    frames[0].save(f'{path}/'+pic_id+'.gif', save_all=True, append_images=frames[1:], optimize=True, duration=200, loop=0)
+    frames[0].save(f'{path}/'+pic_id+'.gif', save_all=True, append_images=frames[1:], optimize=True, duration=300, loop=0)
 
 
 def prepare_data(data, size):
@@ -295,7 +308,7 @@ def pic_to_action_vector(pic, r_fac=1):
     r = np.sqrt(pic.sum()/(3.141592*pic.shape[0]**2))
     return [X.item(), 1-Y.item(), r_fac*r.item()]
 
-def grow_action_vector(pic, r_fac=1, show=False):
+def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_border=False):
     id = int((T.rand(1)*100))
     os.makedirs("result/flownet/solver/grower", exist_ok=True)
     plt.imsave(f"result/flownet/solver/grower/{id}.png", pic)
@@ -310,6 +323,11 @@ def grow_action_vector(pic, r_fac=1, show=False):
         potential = T.sum(ball)
         actual = T.sum(pic[ball.bool()])
         value =  (actual**0.5)*actual/potential
+        if mask is not None:
+            T.any(mask[ball>0]>0)
+            return 0
+        if check_border and (x-r<0 or y-r<0 or x+r>1 or y+r>1):
+            return 0
         return value
 
     def move_and_grow(x,y,r,v):
@@ -343,7 +361,7 @@ def grow_action_vector(pic, r_fac=1, show=False):
     while len(seeds)<num_seeds:
         r = 3/32
         try:
-            y, x = random.choice(np.nonzero(pic>0.1))
+            y, x = random.choice(np.nonzero(pic>0.01))
             seeds.append((x.item()/wid,y.item()/wid,r))
         except:
             y, x = wid//2, wid//2
@@ -562,8 +580,8 @@ if __name__ == "__main__":
     #print(get_auccess_for_n_tries(10))
     
     # Collecting trajectory lookup
-    #pic = draw_ball(32,0.5,0.2,0.2) + draw_ball(32,0.5,0.4,0.1)
-    #print(grow_action_vector(pic))
+    pic = draw_ball(32,0.5,0.2,0.2) + draw_ball(32,0.5,0.4,0.1)
+    print(grow_action_vector(pic, check_border=True, mask=draw_ball(32,0.5,0.4,0.1)))
     #exit()
     fold_id = 0
     eval_setup = 'ball_within_template'

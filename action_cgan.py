@@ -238,7 +238,7 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
         T.autograd.set_detect_anomaly(True)
 
         #vis_batch(disc_batch, "result/test", "disc_batch")
-        #vis_batch(gen_batch, "result/test", "disc_batch")
+        #vis_batch(gen_batch, "result/test", "gen_batch")
 
         # Discriminator
         # Forward
@@ -253,9 +253,9 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
             disc_real_loss = criterion(real_validity, T.ones_like(real_validity))
             # second stage
             noise2 = T.randn(disc_batch.shape[0], generator2.noise_dim).to(device)
-            primed_cond = disc_batch[:,:generator2.s_chan]
+            primed_cond = disc_batch[:,[0,1,2,3,5]]
             primed_fake = generator2(primed_cond, noise2).detach()
-            fake_validity2 = discriminator2(T.cat((disc_batch[:,:discriminator2.s_chan-1], primed_fake, disc_batch[:,None,discriminator2.s_chan-1]), dim=1))
+            fake_validity2 = discriminator2(T.cat((disc_batch[:,:4], primed_fake, disc_batch[:,None,5]), dim=1))
             real_validity2 = discriminator2(disc_batch)
             disc_fake_loss2 = criterion(fake_validity2, T.zeros_like(fake_validity2))
             disc_real_loss2 = criterion(real_validity2, T.ones_like(real_validity2))
@@ -280,7 +280,7 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
         gen_loss = criterion(gen_validity, T.ones_like(gen_validity))
         if args.sequ:
             noise2 = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
-            primed_cond = gen_batch[:,:generator2.s_chan]
+            primed_cond = gen_batch[:,[0,1,2,3,5]]
             primed_fake = generator2(primed_cond, noise2)
             gen_validity2 = discriminator2(T.cat((disc_batch[:,:discriminator2.s_chan-1], primed_fake, disc_batch[:,None,discriminator2.s_chan-1]), dim=1))
             gen_loss2 = criterion(gen_validity2, T.ones_like(gen_validity2))
