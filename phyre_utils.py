@@ -324,10 +324,11 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
         actual = T.sum(pic[ball.bool()])
         value =  (actual**0.5)*actual/potential
         if mask is not None:
-            T.any(mask[ball>0]>0)
-            return 0
-        if check_border and (x-r<0 or y-r<0 or x+r>1 or y+r>1):
-            return 0
+            overlap = mask[ball>0].sum()
+            if overlap>0:
+                return -overlap
+        if check_border and ((x-r)<-0.02 or (y-r)<-0.02 or (x+r)>1.02 or (y+r)>1.02):
+            return -1
         return value
 
     def move_and_grow(x,y,r,v):
@@ -580,8 +581,8 @@ if __name__ == "__main__":
     #print(get_auccess_for_n_tries(10))
     
     # Collecting trajectory lookup
-    pic = draw_ball(32,0.5,0.2,0.2) + draw_ball(32,0.5,0.4,0.1)
-    print(grow_action_vector(pic, check_border=True, mask=draw_ball(32,0.5,0.4,0.1)))
+    pic = draw_ball(32,0.5,0.2,0.3) + draw_ball(32,0.5,0.5,0.1)
+    print(grow_action_vector(pic, check_border=True, mask=draw_ball(32,0.5,0.5,0.1), show=True))
     #exit()
     fold_id = 0
     eval_setup = 'ball_within_template'
