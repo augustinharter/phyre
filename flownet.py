@@ -620,6 +620,63 @@ class FlownetSolver():
 
         return actions
 
+    def generative_auccess(self, tasks):
+        sim = phyre.initialize_simulator(tasks, 'ball')
+        all_initial_scenes = T.tensor([[cv2.resize((scene==channel).astype(float), (32,32)) for channel in range(2,7)] for scene in sim.initial_scenes]).float().flip(-2)
+        eva = phyre.Evaluator(tasks)
+
+        self.to_eval()
+        actions = np.zeros((len(tasks), 3))
+        pipelines = T.zeros(len(tasks),)
+        num_batches = 1+len(tasks)//64
+        for batch in range(num_batches):
+            init_scenes = initial_scenes[batch*64:64*(batch+1)]
+            #emb_init_scenes = F.embedding(T.tensor(batch_scenes), T.eye(phyre.NUM_COLORS)).transpose(-1,-3)[:,1:6].float()
+            #print(init_scenes.equal(emb_init_scenes))
+            with T.no_grad():
+                base_paths = self.base_net(init_scenes)
+                target_paths = self.tar_net(init_scenes)
+                action_paths = self.act_net(T.cat((init_scenes, target_paths, base_paths), dim=1))
+                action_balls = self.ext_net(T.cat((init_scenes, target_paths, action_paths), dim=1))
+                print_batch = T.cat((init_scenes, base_paths, target_paths, action_paths, action_balls), dim=1)
+                #text = ['green\nball GT', 'blue GT\ndynamic', 'blue GT\nstatic', 'grey', 'black', 'base\npred', 'target\npred', 'action\npred', 'a-ball\npred']
+                #vis_batch(print_batch, f'result/flownet/solver/{self.path}', f'{batch}', text=text)
+            batch_task = tasks[64*batch:64*(batch+1)]
+            os.makedirs(f'result/solver/generative/', exist_ok=True)
+            for idx, ball in enumerate(action_balls[:,0]):
+                task = batch_task[idx]
+
+                # CHOOSE ONE VECTOR EXTRACTION METHOD
+                #a = pic_to_action_vector(ball, r_fac=1.5)
+                a = grow_action_vector(ball, r_fac =self.r_fac)
+                print(a)
+
+                drawn = draw_ball(32, *a, invert_y = True)
+                pure_scene = T.as_tensor(np.max(print_batch[idx,[0,1,2,3,4]].numpy(), axis=0))
+                scene_with_estimate = T.as_tensor(np.max(print_batch[idx,[0,1,2,3,4,-1]].numpy(), axis=0))
+                scene_with_injected = T.as_tensor(np.max(T.stack((scene_with_estimate, drawn), dim=0).numpy(), axis=0))
+                init_with_injected = T.as_tensor(np.max(T.cat((init_scenes[idx], drawn[None]), dim=0).numpy(), axis=0))
+                #print(print_batch[idx].shape)
+                #print(scene_with_estimate[None].shape)
+                #print(scene_with_injected[None].shape)
+                #print(init_with_injected[None].shape)
+                pipeline = T.cat((print_batch[idx], scene_with_estimate[None], pure_scene[None], scene_with_injected[None], init_with_injected[None]), dim=0)
+                
+                text = ['green\nball GT', 'blue GT\ndynamic', 'blue GT\nstatic', 'grey', 'black', 'full\nscene', 'base\npred', 'target\npred', 'action\npred', 'a-ball\npred','action\nestimate', 'estimate\n/w action','   final\n   action']
+                x,y,r = round(a[0], 3), round(a[1], 3), round(a[2], 3)
+                vis_batch(pipeline[None], f'result/solver/generative', f"{task}__{str(a)}", text = text)
+                #plt.imsave(f'result/solver/pyramid/{task}___{(x,y,r)}.png', draw_ball(32, *a, invert_y = True))
+                # Radius times 4
+                a[2] = a[2]*4
+                #img = np.max(print_batch[idx,[0,1,2,3,4,-1]].numpy(), axis=0)
+                #plt.imsave(f'result/solver/pyramid/{task}__{str(a)}.png', img)
+                print(a)
+                actions[idx+batch*64] = a
+
+        #print(list(zip(tasks,actions)))
+
+        return actions
+
     def brute_searched_actions(self, tasks, all_initial_scenes):
         cache = phyre.get_default_100k_cache('ball')
         n_actions = 1000
@@ -672,7 +729,7 @@ class FlownetSolver():
 
     def brute_auccess(self, tasks):    
         cache = phyre.get_default_100k_cache('ball')
-        n_actions = 1000
+        n_actions = 5000
         actions = cache.action_array[:n_actions]
         solutions = np.zeros((len(tasks), 150, 3))
 
@@ -1075,6 +1132,14 @@ class FlownetSolver():
                 #text = ['base\npaths', 'target\npaths', 'action\npaths', 'action\nballs']
                 #vis_batch(sum_batch.cpu(), f'result/flownet/inspect/{self.path}/{eval_setup}_fold_{fold}', f'poch_{epoch}_{i}_sum', text=text)
     
+                # Extract action and draw:
+                drawings = T.zeros_like(ball_pred[:,0])
+                for b_idx, ball in enumerate(ball_pred):
+                    a = grow_action_vector(ball, r_fac =self.r_fac)
+                    #print(a)
+                    drawn = draw_ball(32, *a, invert_y = True)
+                    drawings[b_idx, 0] = drawn 
+
                 background = init_scenes[:,3:].sum(dim=1)[:,None]
                 background = background/background.max()
                 diff_batch = T.cat((
@@ -1083,7 +1148,8 @@ class FlownetSolver():
                     T.stack((target_pred, target_paths[:,None], T.zeros_like(target_pred)),dim=-1), 
                     T.stack((action_pred, action_paths[:,None], T.zeros_like(action_pred)),dim=-1), 
                     T.stack((ball_pred, action_balls[:,None], T.zeros_like(ball_pred)),dim=-1),
-                    T.stack((ball_pred+background, init_scenes[:,None,1]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
+                    T.stack((ball_pred+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
+                    T.stack((drawings+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
                     T.stack((action_balls[:,None]+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)), 
                     dim=1).detach()
                 text = ['initial\nscene', 'base\npaths', 'target\npaths', 'action\npaths', 'action\nballs', 'injected\nscene', 'GT\nscene']

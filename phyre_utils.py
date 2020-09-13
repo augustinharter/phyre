@@ -277,7 +277,7 @@ def action_delta_generator():
     count = 0
     while True:
         count += 1
-        action = ((2*np.random.rand(3)-1)*np.array([0.2,0.1,0.05])*temp)
+        action = ((2*np.random.rand(3)-1)*np.array([0.2,0.1,0.2])*temp)
         #print(count,"th", "ACTION:", action)
         yield np.abs(action)
         temp = 1.04*temp if temp<3 else temp
