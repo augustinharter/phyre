@@ -4,6 +4,7 @@ import numpy as np
 
 import torch as T
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision.datasets import ImageFolder, MNIST
 from torchvision import transforms
 from torch import autograd
@@ -46,23 +47,23 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    BASE_PATH = './saves/action_cgan/'
+    BASE_PATH = './saves/object_flow/'
     SAVE_PATH = BASE_PATH+args.path
     DATA_PATH = f'./data/all_task_interactions/{args.data}/interactions.pickle'
     NOISE_DIM = 100
     ONLY_GENERATE = args.genonly
     WIDTH = args.width
-    S_CHANNELS = 4
-    A_CHANNELS = 2
+    IN_CH_N = 4
+    OUT_CH_N = 3
     BATCH_SIZE = 64
 
-    #X = np.zeros((128,S_CHANNELS+A_CHANNELS,WIDTH,WIDTH)) Dummy Dataset
+    #X = np.zeros((128,IN_CH_N+OUT_CH_N,WIDTH,WIDTH)) Dummy Dataset
     with open(DATA_PATH, 'rb') as fs:
         X = T.tensor(pickle.load(fs), dtype=T.float)
     print('loaded dataset with shape:', X.shape)
     data_set = T.utils.data.TensorDataset(X.repeat(128,1,1,1))
     print('loaded dataset with shape:', X.repeat(128,1,1,1).shape)
-    data_set = T.utils.data.TensorDataset(X)
+    #data_set = T.utils.data.TensorDataset(X)
     data_loader = T.utils.data.DataLoader(data_set, batch_size=BATCH_SIZE, shuffle=True)
 
 # %%
@@ -159,19 +160,16 @@ class Generator(nn.Module):
                 nn.ConvTranspose2d(8, 8, 4, 2, 1),
                 nn.LeakyReLU(0.1),
                 nn.BatchNorm2d(8),
-                nn.ConvTranspose2d(8, a_chan, 4, 2, 1),
-                nn.Sigmoid()])
+                nn.ConvTranspose2d(8, a_chan, 4, 2, 1)])
         if folds==2:
             gen_mods.extend([
                 nn.ConvTranspose2d(16, 8, 4, 2, 1),
                 nn.LeakyReLU(0.1),
                 nn.BatchNorm2d(8),
-                nn.ConvTranspose2d(8, a_chan, 4, 2, 1),
-                nn.Sigmoid()])
+                nn.ConvTranspose2d(8, a_chan, 4, 2, 1)])
         if folds==1:
             gen_mods.extend([
-                nn.ConvTranspose2d(16, a_chan, 4, 2, 1),
-                nn.Sigmoid()])
+                nn.ConvTranspose2d(16, a_chan, 4, 2, 1)])
         self.conv_model = nn.Sequential(*gen_mods)
 
         enc_mods = []
@@ -199,7 +197,7 @@ class Generator(nn.Module):
             nn.BatchNorm1d(8*8*16),
             #3
             nn.Linear(8*8*16, width**2 *a_chan),
-            nn.Sigmoid(),
+            nn.Tanh(),
             View((-1, a_chan, width, width))
         )
 
@@ -211,6 +209,11 @@ class Generator(nn.Module):
             flat_features = scenes.flatten(start_dim=1)
         x = T.cat([flat_features, noise], 1)
         out = self.conv_model(x) if self.conv else self.lin_model(x)
+        #out = T.stack((T.sigmoid(out[:,0]), T.sigmoid(out[:,1]), -1*T.sigmoid(out[:,2])), dim=1)
+        if self.s_chan==1:
+            out = T.sigmoid(out)
+        else:
+            out = T.tanh(out)
         return out
 
 #%%
@@ -229,12 +232,9 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
     for i, (batch,) in enumerate(data_loader):
         batch.float()
         bh = batch.shape[0]//2
-        if args.single:
-            gen_batch = batch[:bh,[0,1,2,3,5]].to(device)
-            disc_batch = batch[bh:2*bh,[0,1,2,3,5]].to(device)
-        else:
-            gen_batch = batch[:bh].to(device)
-            disc_batch = batch[bh:2*bh].to(device)
+        gen_batch = batch[:bh].to(device)
+        disc_batch = batch[bh:2*bh].to(device)
+    
         T.autograd.set_detect_anomaly(True)
 
         #vis_batch(disc_batch, "result/test", "disc_batch")
@@ -246,23 +246,26 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
         noise = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
         if args.sequ:
             # first stage
-            fake = generator(disc_batch[:,:generator.s_chan], noise).detach()
-            fake_validity = discriminator(T.cat((disc_batch[:,:generator.s_chan], fake), dim=1))
-            real_validity = discriminator(disc_batch[:,[0,1,2,3,5]])
+            fakes = generator(disc_batch[:,:4], noise).detach()
+            #print(fakes.shape)
+            fake_validity = discriminator(T.cat((disc_batch[:,:4], fakes), dim=1))
+            real_validity = discriminator(disc_batch[:,:5])
             disc_fake_loss = criterion(fake_validity, T.zeros_like(fake_validity))
             disc_real_loss = criterion(real_validity, T.ones_like(real_validity))
+            disc_comb_loss = disc_fake_loss + disc_real_loss
             # second stage
             noise2 = T.randn(disc_batch.shape[0], generator2.noise_dim).to(device)
-            primed_cond = disc_batch[:,[0,1,2,3,5]]
+            primed_cond = disc_batch[:,:5]
             primed_fake = generator2(primed_cond, noise2).detach()
-            fake_validity2 = discriminator2(T.cat((disc_batch[:,:4], primed_fake, disc_batch[:,None,5]), dim=1))
+            fake_validity2 = discriminator2(T.cat((disc_batch[:,:5], primed_fake), dim=1))
             real_validity2 = discriminator2(disc_batch)
             disc_fake_loss2 = criterion(fake_validity2, T.zeros_like(fake_validity2))
             disc_real_loss2 = criterion(real_validity2, T.ones_like(real_validity2))
             disc_comb_loss = disc_fake_loss + disc_real_loss + disc_fake_loss2 + disc_real_loss2
         else:
-            fakes = generator(disc_batch[:,:generator.s_chan], noise).detach()
-            fake_validity = discriminator(T.cat((disc_batch[:,:generator.s_chan], fakes), dim=1))
+            fakes = generator(disc_batch[:,:4], noise).detach()
+            #print(fakes.shape)
+            fake_validity = discriminator(T.cat((disc_batch[:,:4], fakes), dim=1))
             real_validity = discriminator(disc_batch)
             disc_fake_loss = criterion(fake_validity, T.zeros_like(fake_validity))
             disc_real_loss = criterion(real_validity, T.ones_like(real_validity))
@@ -275,14 +278,15 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
         # Forward
         g_optimizer.zero_grad()
         noise = T.randn(gen_batch.shape[0], generator.noise_dim).to(device)
-        gens = generator(gen_batch[:,:generator.s_chan], noise)
-        gen_validity = discriminator(T.cat((gen_batch[:,:generator.s_chan], gens), dim=1))
+        gens = generator(gen_batch[:,:4], noise)
+        #print(gens.shape)
+        gen_validity = discriminator(T.cat((gen_batch[:,:4], gens), dim=1))
         gen_loss = criterion(gen_validity, T.ones_like(gen_validity))
         if args.sequ:
             noise2 = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
-            primed_cond = gen_batch[:,[0,1,2,3,5]]
+            primed_cond = gen_batch[:,:5]
             primed_fake = generator2(primed_cond, noise2)
-            gen_validity2 = discriminator2(T.cat((gen_batch[:,:discriminator2.s_chan-1], primed_fake, disc_batch[:,None,discriminator2.s_chan-1]), dim=1))
+            gen_validity2 = discriminator2(T.cat((gen_batch[:,:5], primed_fake), dim=1))
             gen_loss2 = criterion(gen_validity2, T.ones_like(gen_validity2))
             gen_loss = gen_loss + gen_loss2
         # Backward
@@ -304,19 +308,19 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
     # generate fakes
     with T.no_grad():
         noise = T.randn(cond_batch.shape[0], generator.noise_dim).to(device)
-        fakes = generator(cond_batch[:,:generator.s_chan], noise).detach()
+        fakes = generator(cond_batch[:,:4], noise).detach()
         if sequ is not None:
             noise2 = T.randn(cond_batch.shape[0], generator.noise_dim).to(device)
             if GT:
-                primed_cond = cond_batch[:,[0,1,2,3,5]]
+                primed_cond = cond_batch[:,:5]
             else:
-                primed_cond = T.cat((cond_batch[:,:generator.s_chan], fakes), dim=1)
+                primed_cond = T.cat((cond_batch[:,:4], fakes), dim=1)
             #primed_cond =cond_batch[:,:generator.s_chan+1]
             primed_fake = sequ(primed_cond, noise2)
             fakes = T.cat((fakes, primed_fake), dim=1)
 
     # visualize
-    single = fakes.shape[1] == 1
+    #single = fakes.shape[1] == 1
     '''
     if not grid:
         gridsize = (int(fakes.shape[0]**0.5)+1)
@@ -333,34 +337,66 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
             fake[0],         T.ones(fake.shape[1],1), 
             fake[1] if not single else T.ones(fake.shape[1],1)), dim=1))
     '''
-    actions = cond_batch[:,-2:].cpu()
-    g = fakes if not single else T.cat((fakes, fakes), axis=1)
-    g = g.cpu()
+    g = fakes.cpu()
+    GT = cond_batch[:,4:].cpu()
+    #g = g.cpu()
     wid = fakes.shape[2]
     num_cells = fakes.shape[0]
     s = cond_batch.cpu()
 
-    # composing original scene    
-    back = s[:,3].reshape(num_cells,1,wid,wid).numpy()
-    #print(s[:,0].shape)
-    green = np.max(np.stack((0.5*s[:,0],s[:,1],0.5*s[:,2],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    red = np.max(np.stack((0.5*actions[:,0],actions[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    orig = np.pad(np.concatenate((red, green, back), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
 
-    # composing scene with generated action
-    red = np.max(np.stack((g[:,0],0*g[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    red2 = np.max(np.stack((0*g[:,0],g[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    gen = np.pad(np.concatenate((red, green, red2), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
+    # composing original scene position
+    back = s[:,3].reshape(num_cells,1,wid,wid).numpy()
+    green = np.max(np.stack((0.5*s[:,0],s[:,1],0.5*s[:,2],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    red = np.max(np.stack((GT[:,0],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    pos_GT = np.stack((red, green, back), axis=-1)
+
+    # composing original scene xvel
+    positives = GT[:,1]*(GT[:,1]>0)
+    negatives = -1*GT[:,1]*(GT[:,1]<0)
+    red = np.max(np.stack((negatives, back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    blue = np.max(np.stack((positives, back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    xvel_GT = np.stack((red, green, blue), axis=-1)
+
+    # composing original scene yvel
+    positives = GT[:,2]*(GT[:,2]>0)
+    negatives = -1*GT[:,2]*(GT[:,2]<0)
+    red = np.max(np.stack((negatives, back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    blue = np.max(np.stack((positives, back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    yvel_GT = np.stack((red, green, blue), axis=-1)
+
+    # composing scene with faked position
+    red = np.max(np.stack((g[:,0],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    pos = np.stack((red, green, back), axis=-1)
+
+    # composing scene with faked xvel
+    positives = g[:,1]*(g[:,1]>0)
+    negatives = -1*g[:,1]*(g[:,1]<0)
+    red = np.max(np.stack((negatives, back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    blue = np.max(np.stack((positives, back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    xvel = np.stack((red, green, blue), axis=-1)
+
+    # composing scene with faked yvel
+    positives = g[:,2]*(g[:,2]>0)
+    negatives = -1*g[:,2]*(g[:,2]<0)
+    red = np.max(np.stack((negatives, back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    blue = np.max(np.stack((positives, back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    yvel = np.stack((red, green, blue), axis=-1)
+
     #print(combined)
-    combined = np.concatenate((orig, gen), axis=1).reshape(2*num_cells,3,wid+2,wid+2)
-    grid = make_grid(T.tensor(combined), nrow=8, normalize=True)
+    combined = np.stack((pos_GT, pos, xvel_GT, xvel, yvel_GT, yvel), axis=1)[:,:,0]
+    text = ["pos GT", "pos faked", "xvel GT", "xvel faked", "yvel GT", "yvel faked"]
+    #print(combined.shape)
+    combined[combined>1] = 1
+    vis_batch(T.from_numpy(combined), f'./result/object_flow/{path}', f'{save_id}grid', text=text)
+    #grid = make_grid(T.tensor(combined), nrow=8, normalize=True)
     #plt.imshow(grid[0])
     #plt.show(block=False)
 
     # save
-    os.makedirs(f'./result/action_cgan/{path}', exist_ok=True)
-    #fig.savefig(f'./result/action_cgan/{path}/{save_id}', dpi=1000)
-    save_image(grid, f'./result/action_cgan/{path}/{save_id}grid.png')
+    #os.makedirs(f'./result/object_flow/{path}', exist_ok=True)
+    #fig.savefig(f'./result/object_flow/{path}/{save_id}', dpi=1000)
+    #save_image(grid, f'./result/object_flow/{path}/{save_id}grid.png')
     #plt.show()
 
 def save_models(models, save_path):
@@ -379,12 +415,12 @@ def load_models(models, load_path):
 # %%
 if __name__ == "__main__":
     # Initializing models
-    a_chans = A_CHANNELS-int(args.single)-int(args.sequ)
-    generator = Generator(WIDTH, NOISE_DIM, S_CHANNELS, a_chans, conv= not args.lingen, folds=args.folds).to(device)
-    discriminator = Discriminator(WIDTH, S_CHANNELS, a_chans, conv= not args.lindisc, folds=args.folds).to(device)
+    out_ch_n = OUT_CH_N - (2 if args.sequ else 0)
+    generator = Generator(WIDTH, NOISE_DIM, IN_CH_N, out_ch_n, conv= not args.lingen, folds=args.folds).to(device)
+    discriminator = Discriminator(WIDTH, IN_CH_N, out_ch_n, conv= not args.lindisc, folds=args.folds).to(device)
     if args.sequ:
-        generator2 = Generator(WIDTH, NOISE_DIM, S_CHANNELS+1, a_chans, conv= not args.lingen, folds=args.folds).to(device)
-        discriminator2 = Discriminator(WIDTH, S_CHANNELS+1, a_chans, conv= not args.lindisc, folds=args.folds).to(device)
+        generator2 = Generator(WIDTH, NOISE_DIM, IN_CH_N+1, OUT_CH_N-1, conv= not args.lingen, folds=args.folds).to(device)
+        discriminator2 = Discriminator(WIDTH, IN_CH_N+1, OUT_CH_N-1, conv= not args.lindisc, folds=args.folds).to(device)
 
     criterion = nn.BCELoss()
     disc_params = chain(discriminator.parameters(), discriminator2.parameters() if args.sequ else [])
@@ -416,7 +452,7 @@ if __name__ == "__main__":
                     data_loader, criterion, args, verbose_every=args.verbose, gen_eval_every=args.geneval, device=device)
             else:
                 train(epoch, [generator], g_optimizer, [discriminator], d_optimizer, 
-                    data_loader, criterion, args, verbose_every=args.verbose, gen_eval_every=args.geneval)
+                    data_loader, criterion, args, verbose_every=args.verbose, gen_eval_every=args.geneval,  device=device)
 
             # models are saved every 'saveevery' epoch
             if args.saveevery and not (epoch+1)%args.saveevery:
