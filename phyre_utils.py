@@ -327,8 +327,8 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
             overlap = mask[ball>0].sum()
             if overlap>0:
                 return -overlap
-        if check_border and ((x-r)<-0.02 or (y-r)<-0.02 or (x+r)>1.02 or (y+r)>1.02):
-            return -1
+        if check_border and ((x-r)<-0.00 or (y-r)<-0.00 or (x+r)>1.00 or (y+r)>1.00):
+            return min([x-r, 1-(x+r), y-r, 1-(y+r)])
         return value
 
     def move_and_grow(x,y,r,v):
@@ -349,8 +349,8 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
     def grow(x,y,r,v):
         bestv = v
         bestrad = r
-        for rad in [r+0.3/wid, r+0.6/wid, r+0.9/wid, r-0.35/wid]:
-            if 0<rad<wid:
+        for rad in [r+0.005, r+0.01, r+0.03, r-0.01]:
+            if 0<rad<=0.125:
                 value = get_value(x,y,rad)
                 if value>bestv:
                     bestv = value
@@ -360,9 +360,9 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
     seeds = []
     num_seeds = 5
     while len(seeds)<num_seeds:
-        r = 3/32
+        r = 0.04 +np.random.rand()*0.05
         try:
-            y, x = random.choice(np.nonzero(pic>0.01))
+            y, x = random.choice(np.nonzero(pic>0.01))+np.random.rand(2)*0.05
             seeds.append((x.item()/wid,y.item()/wid,r))
         except:
             y, x = wid//2, wid//2
@@ -377,6 +377,7 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
             x, y, r, v = move_and_grow(x,y,r,v)
             #r, v = grow(x,y,r,v)
             if show:
+                print(x,y,r,v)
                 plt.imshow(pic+draw_ball(wid,x,y,r))
                 plt.show()
         final_seeds.append(((x,y,r),v))
