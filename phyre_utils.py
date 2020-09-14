@@ -84,16 +84,16 @@ def vis_batch(batch, path, pic_id, text = [], save=True):
     if text:
         text_height= 40
         if len(reshaped.shape) == 2:
-            reshaped = F.pad(reshaped, (0,0,text_height,0), value=0.0)
+            reshaped = F.pad(reshaped, (0,0,text_height,0), value=1)
             img = Image.fromarray(np.uint8(reshaped.numpy()*255), mode="L")
         elif len(reshaped.shape) == 3:
-            reshaped = F.pad(reshaped, (0,0,0,0,text_height,0), value=0.0)
+            reshaped = F.pad(reshaped, (0,0,0,0,text_height,0), value=1)
             img = Image.fromarray(np.uint8(reshaped.numpy()*255))
         font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 9)
         draw = ImageDraw.Draw(img)
         for i, words in enumerate(text):
             x, y = i*reshaped.shape[1]//len(text), 0
-            draw.text((x, y), words, fill=(255) if len(reshaped.shape)==2 else (255,255,255), font=font)
+            draw.text((x, y), words, fill=(0) if len(reshaped.shape)==2 else (0,0,0), font=font)
         if save:
             img.save(f'{path}/'+pic_id+'.png')
         else:
@@ -106,6 +106,8 @@ def vis_batch(batch, path, pic_id, text = [], save=True):
 
 def gifify(batch, path, pic_id, text = [], constant=None):
     #print(batch.shape)
+    if np.max(batch.numpy())>1.0:
+        batch = batch/256
 
     if len(batch.shape) == 4:
         padded = F.pad(batch, (1,1,1,1), value=0.5)
@@ -114,8 +116,6 @@ def gifify(batch, path, pic_id, text = [], constant=None):
     else:
         print("Unknown shape:", batch.shape)
 
-    if np.max(padded.numpy())>1.0:
-        padded = padded/256
     os.makedirs(path, exist_ok=True)
 
     frames = []
@@ -142,7 +142,7 @@ def gifify(batch, path, pic_id, text = [], constant=None):
                 img = Image.fromarray(np.uint8(frame.numpy()*255))
                
         if constant is not None:
-            dst = Image.new('RGB', (img.width, img.height + constant.height))
+            dst = Image.new('RGB', (img.width, img.height + constant.height), (255, 255, 255))
             dst.paste(constant, (0, 0))
             dst.paste(img, (0, constant.height))
 
@@ -277,15 +277,17 @@ def draw_ball(w, x, y, r, invert_y=False):
         dist = (X.pow(2)+Y.pow(2)).pow(0.5)
         return (dist<r).float()
 
-def action_delta_generator():
+def action_delta_generator(pure_noise=False):
     temp = 1
     radfac = 0.025
-    coordfac = 0.07
-    for fac in [1,2]:
-        for rad in [0,1,-1]:
-            for xd,yd in [(1,0), (-1,0), (2,0), (-2,0), (-1,2), (1,2), (-1,-2), (-1,-2)]:
-                #print((fac*np.array((coordfac*xd, coordfac*yd, rad*radfac))))
-                yield (fac*np.array((coordfac*xd, coordfac*yd, rad*radfac)))
+    coordfac = 0.1
+    
+    if not pure_noise:
+        for fac in [0.5,1,2]:
+            for rad in [0,1,-1]:
+                for xd,yd in [(1,0), (-1,0), (2,0), (-2,0), (-1,2), (1,2), (-1,-2), (-1,-2)]:
+                    #print((fac*np.array((coordfac*xd, coordfac*yd, rad*radfac))))
+                    yield (fac*np.array((coordfac*xd, coordfac*yd, rad*radfac)))
     
     count = 0
     while True:
@@ -293,7 +295,7 @@ def action_delta_generator():
         action = ((2*np.random.rand(3)-1)*np.array([0.2,0.1,0.2])*temp)
         #print(count,"th", "ACTION:", action)
         yield np.abs(action)
-        temp = 1.04*temp if temp<3 else temp
+        temp = 1.04*temp if temp<5 else temp
 
 def pic_to_action_vector(pic, r_fac=1):
     X, Y = 0, 0
@@ -310,10 +312,10 @@ def pic_to_action_vector(pic, r_fac=1):
 
 def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_border=False):
     id = int((T.rand(1)*100))
-    os.makedirs("result/flownet/solver/grower", exist_ok=True)
-    plt.imsave(f"result/flownet/solver/grower/{id}.png", pic)
+    #os.makedirs("result/flownet/solver/grower", exist_ok=True)
+    #plt.imsave(f"result/flownet/solver/grower/{id}.png", pic)
     pic = pic*(pic>pic.mean())
-    plt.imsave(f"result/flownet/solver/grower/{id}_thresh.png", pic)
+    #plt.imsave(f"result/flownet/solver/grower/{id}_thresh.png", pic)
 
 
     wid = pic.shape[0]
@@ -327,8 +329,8 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
             overlap = mask[ball>0].sum()
             if overlap>0:
                 return -overlap
-        if check_border and ((x-r)<-0.02 or (y-r)<-0.02 or (x+r)>1.02 or (y+r)>1.02):
-            return -1
+        if check_border and ((x-r)<-0.00 or (y-r)<-0.00 or (x+r)>1.00 or (y+r)>1.00):
+            return min([x-r, 1-(x+r), y-r, 1-(y+r)])
         return value
 
     def move_and_grow(x,y,r,v):
@@ -349,8 +351,8 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
     def grow(x,y,r,v):
         bestv = v
         bestrad = r
-        for rad in [r+0.3/wid, r+0.6/wid, r+0.9/wid, r-0.35/wid]:
-            if 0<rad<wid:
+        for rad in [r+0.005, r+0.01, r+0.03, r-0.01]:
+            if 0<rad<=0.125:
                 value = get_value(x,y,rad)
                 if value>bestv:
                     bestv = value
@@ -360,9 +362,9 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
     seeds = []
     num_seeds = 5
     while len(seeds)<num_seeds:
-        r = 3/32
+        r = 0.04 +np.random.rand()*0.05
         try:
-            y, x = random.choice(np.nonzero(pic>0.01))
+            y, x = random.choice(np.nonzero(pic>0.01))+np.random.rand(2)*0.05
             seeds.append((x.item()/wid,y.item()/wid,r))
         except:
             y, x = wid//2, wid//2
@@ -377,6 +379,7 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
             x, y, r, v = move_and_grow(x,y,r,v)
             #r, v = grow(x,y,r,v)
             if show:
+                print(x,y,r,v)
                 plt.imshow(pic+draw_ball(wid,x,y,r))
                 plt.show()
         final_seeds.append(((x,y,r),v))

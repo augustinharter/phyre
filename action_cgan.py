@@ -308,7 +308,7 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
         if sequ is not None:
             noise2 = T.randn(cond_batch.shape[0], generator.noise_dim).to(device)
             if GT:
-                primed_cond = cond_batch[:,:sequ.s_chan]
+                primed_cond = cond_batch[:,[0,1,2,3,5]]
             else:
                 primed_cond = T.cat((cond_batch[:,:generator.s_chan], fakes), dim=1)
             #primed_cond =cond_batch[:,:generator.s_chan+1]

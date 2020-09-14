@@ -9,6 +9,7 @@ from matplotlib import pyplot as plt
 import os
 from PIL import Image, ImageDraw, ImageFont
 import sys
+import json
 
 def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False):
     if save_tries:
@@ -135,10 +136,30 @@ def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False)
     
     return eva.get_auccess()
 
+def extract_auc_dict(path):
+    auc_dict = json.load(f'result/solver/result/{path}/auccess-dict.json')
+    res = dict()
+    for eval_setup in ['ball_within_template', 'ball_cross_template']:
+        if not (eval_setup in res):
+            res[eval_setup] = []
+
+        for fold_id in range(10):
+            if f"{eval_setup}_{fold_id}" in auc_dict:
+                res[eval_setup].append(auc_dict[f"{eval_setup}_{fold_id}"])
+
+            for template in [('0000'+str(i))[-5:] for i in range(25)]:
+                if not (template in res):
+                    res[template] = []
+                if f"{eval_setup}_{fold_id}_{template}" in auc_dict:
+                    res[template] = auc_dict[f"{eval_setup}_{fold_id}_{template}"]
+                    
+    
+
 if __name__ == "__main__":
     from flownet import *
 
     model_path = sys.argv[sys.argv.index("--path")+1] if "--path" in sys.argv else "default"
+    run = sys.argv[sys.argv.index("--run")+1] if "--run" in sys.argv else "default"
     print("Model path:", model_path)
     epochs = int(sys.argv[sys.argv.index("--epochs")+1]) if "--epochs" in sys.argv else 10
     nper = int(sys.argv[sys.argv.index("--nper")+1]) if "--nper" in sys.argv else 1
@@ -146,13 +167,14 @@ if __name__ == "__main__":
     smart = '-smart' in sys.argv
 
     auccess = []
+    auc_dict = dict()
     for eval_setup in ['ball_within_template', 'ball_cross_template']:
         auccess.append(eval_setup)
-        for fold_id in range(3):
+        for fold_id in range(1):
             if "-brute" in sys.argv:
-                solver = FlownetSolver(model_path, "brute", smart=smart)
+                solver = FlownetSolver(model_path, "brute", smart=smart, run=run)
             else:
-                solver = FlownetSolver(model_path, "pyramid", smart=smart)
+                solver = FlownetSolver(model_path, "pyramid", smart=smart, run=run)
 
             train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
 
@@ -191,19 +213,51 @@ if __name__ == "__main__":
             if "-solve" in sys.argv:
                 print(model_path, eval_setup, fold_id, "|| getting auccess...")
                 if "-brute" in sys.argv:
-                    local_auccess = solver.brute_auccess(test_ids+dev_ids)
+                    local_auccess = solver.brute_auccess(test_ids)
                     #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                     os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
                     with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
                         handle.write(f"auccess: {local_auccess} \nepochs: 50")
                     auccess.append(local_auccess)
+
                 else:
-                    local_auccess = solver.generative_auccess_old(test_ids+dev_ids)
+                    local_auccess = solver.generative_auccess_old(test_ids, setup=eval_setup, fold=fold_id, pure_noise=False)
                     #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                     os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
                     with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
                         handle.write(f"auccess: {local_auccess} \nepochs: 50")
                     auccess.append(local_auccess)
+
+            if "-solve-templ" in sys.argv:
+                print(model_path, eval_setup, fold_id, "|| getting auccess per template...")
+                for template in [('0000'+str(i))[-5:] for i in range(25)]:
+                    ids = [id for id in test_ids+dev_ids if id.startswith(template)]
+                    if not ids:
+                        continue
+                    print("solving", ids)
+                    if "-brute" in sys.argv:
+                        local_auccess = solver.brute_auccess(ids)
+                        print(f"{template} auccess: {local_auccess}")
+                        #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
+                        os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
+                        with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'a') as handle:
+                            handle.write(f"\n{template} auccess: {local_auccess}")
+                        auccess.append(local_auccess)
+                        auc_dict[f"{eval_setup}_{fold_id}_{template}"] = local_auccess
+                        with open(f'result/solver/result/{solver.path}/auccess-dict.json', 'w') as fp:
+                            json.dump(auc_dict, fp)
+                    else:
+                        local_auccess = solver.generative_auccess_old(ids, f'{eval_setup}_{fold_id}_{template}', pure_noise=True)
+                        print(f"{template} auccess: {local_auccess}")
+                        #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
+                        os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
+                        with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'a') as handle:
+                            handle.write(f"\n{template} auccess: {local_auccess}")
+                        auccess.append(local_auccess)
+                        auc_dict[f"{eval_setup}_{fold_id}_{template}"] = local_auccess
+                        with open(f'result/solver/result/{solver.path}/auccess-dict.json', 'w') as fp:
+                            json.dump(auc_dict, fp)
+            
                     """
                     auccess.append( get_auccess(solver, test_ids+dev_ids, solve_noise=True, save_tries=True) )
                     os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
