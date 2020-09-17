@@ -84,16 +84,16 @@ def vis_batch(batch, path, pic_id, text = [], save=True):
     if text:
         text_height= 40
         if len(reshaped.shape) == 2:
-            reshaped = F.pad(reshaped, (0,0,text_height,0), value=0.0)
+            reshaped = F.pad(reshaped, (0,0,text_height,0), value=1)
             img = Image.fromarray(np.uint8(reshaped.numpy()*255), mode="L")
         elif len(reshaped.shape) == 3:
-            reshaped = F.pad(reshaped, (0,0,0,0,text_height,0), value=0.0)
+            reshaped = F.pad(reshaped, (0,0,0,0,text_height,0), value=1)
             img = Image.fromarray(np.uint8(reshaped.numpy()*255))
         font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 9)
         draw = ImageDraw.Draw(img)
         for i, words in enumerate(text):
             x, y = i*reshaped.shape[1]//len(text), 0
-            draw.text((x, y), words, fill=(255) if len(reshaped.shape)==2 else (255,255,255), font=font)
+            draw.text((x, y), words, fill=(0) if len(reshaped.shape)==2 else (0,0,0), font=font)
         if save:
             img.save(f'{path}/'+pic_id+'.png')
         else:
@@ -106,6 +106,8 @@ def vis_batch(batch, path, pic_id, text = [], save=True):
 
 def gifify(batch, path, pic_id, text = [], constant=None):
     #print(batch.shape)
+    if np.max(batch.numpy())>1.0:
+        batch = batch/256
 
     if len(batch.shape) == 4:
         padded = F.pad(batch, (1,1,1,1), value=0.5)
@@ -114,8 +116,6 @@ def gifify(batch, path, pic_id, text = [], constant=None):
     else:
         print("Unknown shape:", batch.shape)
 
-    if np.max(padded.numpy())>1.0:
-        padded = padded/256
     os.makedirs(path, exist_ok=True)
 
     frames = []
@@ -142,7 +142,7 @@ def gifify(batch, path, pic_id, text = [], constant=None):
                 img = Image.fromarray(np.uint8(frame.numpy()*255))
                
         if constant is not None:
-            dst = Image.new('RGB', (img.width, img.height + constant.height))
+            dst = Image.new('RGB', (img.width, img.height + constant.height), (255, 255, 255))
             dst.paste(constant, (0, 0))
             dst.paste(img, (0, constant.height))
 
@@ -277,23 +277,29 @@ def draw_ball(w, x, y, r, invert_y=False):
         dist = (X.pow(2)+Y.pow(2)).pow(0.5)
         return (dist<r).float()
 
-def action_delta_generator():
+def action_delta_generator(pure_noise=False):
     temp = 1
     radfac = 0.025
-    coordfac = 0.07
-    for fac in [1,2]:
-        for rad in [0,1,-1]:
-            for xd,yd in [(1,0), (-1,0), (2,0), (-2,0), (-1,2), (1,2), (-1,-2), (-1,-2)]:
-                #print((fac*np.array((coordfac*xd, coordfac*yd, rad*radfac))))
-                yield (fac*np.array((coordfac*xd, coordfac*yd, rad*radfac)))
+    coordfac = 0.1
     
+    #for x,y,r in zip([0.05,-0.05,0.1,-0.1],[0,0,0,0],[-0.1,-0.2,-0.3,0]):
+        #yield x,y,r
+
+    if not pure_noise:
+        for fac in [0.5,1,2]:
+            for rad in [0,1,-1]:
+                for xd,yd in [(1,0), (-1,0), (2,0), (-2,0), (-1,2), (1,2), (-1,-2), (-1,-2)]:
+                    #print((fac*np.array((coordfac*xd, coordfac*yd, rad*radfac))))
+                    yield (fac*np.array((coordfac*xd, coordfac*yd, rad*radfac)))
     count = 0
     while True:
         count += 1
-        action = ((2*np.random.rand(3)-1)*np.array([0.2,0.1,0.2])*temp)
+        action = ((np.random.randn(3))*np.array([0.2,0.1,0.2])*temp)*0.2
         #print(count,"th", "ACTION:", action)
-        yield np.abs(action)
-        temp = 1.04*temp if temp<3 else temp
+        if np.linalg.norm(action)<0.05:
+            continue
+        yield action
+        temp = 1.04*temp if temp<5 else temp
 
 def pic_to_action_vector(pic, r_fac=1):
     X, Y = 0, 0
@@ -310,10 +316,10 @@ def pic_to_action_vector(pic, r_fac=1):
 
 def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_border=False):
     id = int((T.rand(1)*100))
-    os.makedirs("result/flownet/solver/grower", exist_ok=True)
-    plt.imsave(f"result/flownet/solver/grower/{id}.png", pic)
+    #os.makedirs("result/flownet/solver/grower", exist_ok=True)
+    #plt.imsave(f"result/flownet/solver/grower/{id}.png", pic)
     pic = pic*(pic>pic.mean())
-    plt.imsave(f"result/flownet/solver/grower/{id}_thresh.png", pic)
+    #plt.imsave(f"result/flownet/solver/grower/{id}_thresh.png", pic)
 
 
     wid = pic.shape[0]
@@ -333,7 +339,7 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
 
     def move_and_grow(x,y,r,v):
         delta = 0.7
-        positions = [(x+dx,y+dy) for (dx,dy) in [(-(0.3+delta)/wid,0), ((0.3+delta)/wid,0), (0,-(0.3+delta)/wid), (0,(0.3+delta)/wid)] if (0<=x+dx<1) and (0<=y+dy<1)]
+        positions = [(x+dx,y+dy) for (dx,dy) in [(-(0.3+delta)/30,0), ((0.3+delta)/30,0), (0,-(0.3+delta)/30), (0,(0.3+delta)/30)] if (0<=x+dx<1) and (0<=y+dy<1)]
         bestpos = (x,y)
         bestrad = r
         bestv = v
@@ -350,7 +356,7 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
         bestv = v
         bestrad = r
         for rad in [r+0.005, r+0.01, r+0.03, r-0.01]:
-            if 0<rad<=0.125:
+            if 0<rad<0.3:
                 value = get_value(x,y,rad)
                 if value>bestv:
                     bestv = value
@@ -358,13 +364,13 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
         return bestrad, bestv
 
     seeds = []
-    num_seeds = 5
     while len(seeds)<num_seeds:
         r = 0.04 +np.random.rand()*0.05
         try:
-            y, x = random.choice(np.nonzero(pic>0.01))+np.random.rand(2)*0.05
+            y, x = random.choice(T.nonzero((pic>0.01)))+T.rand(2)*0.05
             seeds.append((x.item()/wid,y.item()/wid,r))
-        except:
+        except Exception as e:
+            print("EXCEPTION", e)
             y, x = wid//2, wid//2
             seeds.append((x/wid,y/wid,r))
 
@@ -387,7 +393,7 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
     plt.imsave(f"result/flownet/solver/grower/{id}_drawn.png", draw_ball(wid, *action, invert_y = True))
     action[2]*=r_fac
     compare_action = action.copy()
-    action[2] = action[2] if action[2]<0.25 else 0.24999
+    action[2] = action[2] if action[2]<0.125 else 0.125
     action[0] = action[0] if action[0]> 0 else  0
     action[0] = action[0] if action[0]<1- 0 else 1- 0
     action[1] = action[1] if action[1]> 0 else  0
