@@ -282,7 +282,7 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
             noise2 = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
             primed_cond = gen_batch[:,[0,1,2,3,5]]
             primed_fake = generator2(primed_cond, noise2)
-            gen_validity2 = discriminator2(T.cat((gen_batch[:,:discriminator2.s_chan-1], primed_fake, disc_batch[:,None,discriminator2.s_chan-1]), dim=1))
+            gen_validity2 = discriminator2(T.cat((gen_batch[:,:discriminator2.s_chan-1], primed_fake, gen_batch[:,None,discriminator2.s_chan-1]), dim=1))
             gen_loss2 = criterion(gen_validity2, T.ones_like(gen_validity2))
             gen_loss = gen_loss + gen_loss2
         # Backward
