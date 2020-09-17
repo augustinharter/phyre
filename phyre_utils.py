@@ -282,19 +282,23 @@ def action_delta_generator(pure_noise=False):
     radfac = 0.025
     coordfac = 0.1
     
+    #for x,y,r in zip([0.05,-0.05,0.1,-0.1],[0,0,0,0],[-0.1,-0.2,-0.3,0]):
+        #yield x,y,r
+
     if not pure_noise:
         for fac in [0.5,1,2]:
             for rad in [0,1,-1]:
                 for xd,yd in [(1,0), (-1,0), (2,0), (-2,0), (-1,2), (1,2), (-1,-2), (-1,-2)]:
                     #print((fac*np.array((coordfac*xd, coordfac*yd, rad*radfac))))
                     yield (fac*np.array((coordfac*xd, coordfac*yd, rad*radfac)))
-    
     count = 0
     while True:
         count += 1
-        action = ((2*np.random.rand(3)-1)*np.array([0.2,0.1,0.2])*temp)
+        action = ((np.random.randn(3))*np.array([0.2,0.1,0.2])*temp)*0.2
         #print(count,"th", "ACTION:", action)
-        yield np.abs(action)
+        if np.linalg.norm(action)<0.05:
+            continue
+        yield action
         temp = 1.04*temp if temp<5 else temp
 
 def pic_to_action_vector(pic, r_fac=1):
@@ -335,7 +339,7 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
 
     def move_and_grow(x,y,r,v):
         delta = 0.7
-        positions = [(x+dx,y+dy) for (dx,dy) in [(-(0.3+delta)/wid,0), ((0.3+delta)/wid,0), (0,-(0.3+delta)/wid), (0,(0.3+delta)/wid)] if (0<=x+dx<1) and (0<=y+dy<1)]
+        positions = [(x+dx,y+dy) for (dx,dy) in [(-(0.3+delta)/30,0), ((0.3+delta)/30,0), (0,-(0.3+delta)/30), (0,(0.3+delta)/30)] if (0<=x+dx<1) and (0<=y+dy<1)]
         bestpos = (x,y)
         bestrad = r
         bestv = v
@@ -352,7 +356,7 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
         bestv = v
         bestrad = r
         for rad in [r+0.005, r+0.01, r+0.03, r-0.01]:
-            if 0<rad<=0.125:
+            if 0<rad<0.3:
                 value = get_value(x,y,rad)
                 if value>bestv:
                     bestv = value
@@ -360,13 +364,13 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
         return bestrad, bestv
 
     seeds = []
-    num_seeds = 5
     while len(seeds)<num_seeds:
         r = 0.04 +np.random.rand()*0.05
         try:
-            y, x = random.choice(np.nonzero(pic>0.01))+np.random.rand(2)*0.05
+            y, x = random.choice(T.nonzero((pic>0.01)))+T.rand(2)*0.05
             seeds.append((x.item()/wid,y.item()/wid,r))
-        except:
+        except Exception as e:
+            print("EXCEPTION", e)
             y, x = wid//2, wid//2
             seeds.append((x/wid,y/wid,r))
 
@@ -389,7 +393,7 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
     plt.imsave(f"result/flownet/solver/grower/{id}_drawn.png", draw_ball(wid, *action, invert_y = True))
     action[2]*=r_fac
     compare_action = action.copy()
-    action[2] = action[2] if action[2]<0.25 else 0.24999
+    action[2] = action[2] if action[2]<0.125 else 0.125
     action[0] = action[0] if action[0]> 0 else  0
     action[0] = action[0] if action[0]<1- 0 else 1- 0
     action[1] = action[1] if action[1]> 0 else  0

@@ -34,10 +34,12 @@ if __name__ == "__main__":
     parser.add_argument('--load_disc', default='',type=str)
     parser.add_argument('-single', action='store_true')
     parser.add_argument('-genonly', action='store_true')
+    parser.add_argument('-init', action='store_true')
     parser.add_argument('-lindisc', action='store_true')
     parser.add_argument('-lingen', action='store_true')
     parser.add_argument('-sequ', action='store_true')
     parser.add_argument('-load', action='store_true')
+    parser.add_argument('-overfit', action='store_true')
     parser.add_argument('--epochs', default=10, type=int)
     parser.add_argument('--width', default=16, type=int)
     parser.add_argument('--geneval', default=10, type=int)
@@ -60,9 +62,11 @@ if __name__ == "__main__":
     with open(DATA_PATH, 'rb') as fs:
         X = T.tensor(pickle.load(fs), dtype=T.float)
     print('loaded dataset with shape:', X.shape)
-    data_set = T.utils.data.TensorDataset(X.repeat(128,1,1,1))
-    print('loaded dataset with shape:', X.repeat(128,1,1,1).shape)
-    data_set = T.utils.data.TensorDataset(X)
+    if args.overfit:
+        data_set = T.utils.data.TensorDataset(X.repeat(128,1,1,1))
+        print('repeated dataset to shape:', X.repeat(128,1,1,1).shape)
+    else:
+        data_set = T.utils.data.TensorDataset(X)
     data_loader = T.utils.data.DataLoader(data_set, batch_size=BATCH_SIZE, shuffle=True)
 
 # %%
@@ -232,9 +236,12 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
         if args.single:
             gen_batch = batch[:bh,[0,1,2,3,5]].to(device)
             disc_batch = batch[bh:2*bh,[0,1,2,3,5]].to(device)
+        if args.init:
+            gen_batch = batch[:bh,[0,1,2,3,6,5]].to(device)
+            disc_batch = batch[bh:2*bh,[0,1,2,3,6,5]].to(device)
         else:
-            gen_batch = batch[:bh].to(device)
-            disc_batch = batch[bh:2*bh].to(device)
+            gen_batch = batch[:bh,:6].to(device)
+            disc_batch = batch[bh:2*bh,:6].to(device)
         T.autograd.set_detect_anomaly(True)
 
         #vis_batch(disc_batch, "result/test", "disc_batch")
@@ -282,7 +289,7 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
             noise2 = T.randn(disc_batch.shape[0], generator.noise_dim).to(device)
             primed_cond = gen_batch[:,[0,1,2,3,5]]
             primed_fake = generator2(primed_cond, noise2)
-            gen_validity2 = discriminator2(T.cat((gen_batch[:,:discriminator2.s_chan-1], primed_fake, disc_batch[:,None,discriminator2.s_chan-1]), dim=1))
+            gen_validity2 = discriminator2(T.cat((gen_batch[:,:discriminator2.s_chan-1], primed_fake, gen_batch[:,None,discriminator2.s_chan-1]), dim=1))
             gen_loss2 = criterion(gen_validity2, T.ones_like(gen_validity2))
             gen_loss = gen_loss + gen_loss2
         # Backward
@@ -297,8 +304,10 @@ def train(epoch, generators, g_optimizer, discriminators, d_optimizer, data_load
                 print(f'D: fl {disc_fake_loss} rl {disc_real_loss}  G: {gen_loss}')
 
         if gen_eval_every and not (epoch+1)%gen_eval_every and not i:
-            generate(generator, gen_batch, 1, args.path+'-training', epoch, sequ=generator2 if args.sequ else None, device=device)
-            generate(generator, gen_batch, 1, args.path+'-training', str(epoch)+'_', sequ=generator2 if args.sequ else None, device=device)
+            generate(generator, gen_batch, 1, args.path+'-training', str(epoch)+'_2', sequ=generator2 if args.sequ else None, device=device, GT=False)
+            generate(generator, gen_batch, 1, args.path+'-training', epoch, sequ=generator2 if args.sequ else None, device=device, GT=False)
+            generate(generator, gen_batch, 1, args.path+'-training', str(epoch)+'_GT', sequ=generator2 if args.sequ else None, device=device)
+            generate(generator, gen_batch, 1, args.path+'-training', str(epoch)+'_GT_2', sequ=generator2 if args.sequ else None, device=device)
 
 def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = None, device="cpu", GT=True):
     # generate fakes
@@ -344,13 +353,15 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
     back = s[:,3].reshape(num_cells,1,wid,wid).numpy()
     #print(s[:,0].shape)
     green = np.max(np.stack((0.5*s[:,0],s[:,1],0.5*s[:,2],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    red = np.max(np.stack((0.5*actions[:,0],actions[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    orig = np.pad(np.concatenate((red, green, back), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
+
+    red = np.max(np.stack((0*actions[:,0],actions[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    red2 = np.max(np.stack((0*actions[:,1],actions[:,0],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
+    orig = np.pad(np.concatenate((red, green, red2), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
 
     # composing scene with generated action
     red = np.max(np.stack((g[:,0],0*g[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     red2 = np.max(np.stack((0*g[:,0],g[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
-    gen = np.pad(np.concatenate((red, green, red2), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
+    gen = np.pad(np.concatenate((red, green, red2), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
     #print(combined)
     combined = np.concatenate((orig, gen), axis=1).reshape(2*num_cells,3,wid+2,wid+2)
     grid = make_grid(T.tensor(combined), nrow=8, normalize=True)
@@ -432,7 +443,7 @@ if __name__ == "__main__":
             batch = batch.to(device)
             if i ==10:
                 break
-            generate(generator, batch[:32], 1, f'{args.path}-results', i, grid=(4,2), 
-                sequ = generator2 if args.sequ else None, device=device)
-            generate(generator, batch[:32], 1, f'{args.path}-results', str(i)+'_', grid=(4,2), 
-                sequ = generator2 if args.sequ else None, device=device)
+            generate(generator, batch[:32], 1, args.path+'-eval', str(epoch)+'_2', sequ=generator2 if args.sequ else None, device=device, GT=False)
+            generate(generator, batch[:32], 1, args.path+'-eval', epoch, sequ=generator2 if args.sequ else None, device=device, GT=False)
+            generate(generator, batch[:32], 1, args.path+'-eval', str(epoch)+'_GT', sequ=generator2 if args.sequ else None, device=device)
+            generate(generator, batch[:32], 1, args.path+'-eval', str(epoch)+'_GT_2', sequ=generator2 if args.sequ else None, device=device)
