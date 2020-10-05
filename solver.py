@@ -159,10 +159,15 @@ if __name__ == "__main__":
     model_path = sys.argv[sys.argv.index("--path")+1] if "--path" in sys.argv else "standard"
     type = sys.argv[sys.argv.index("--type")+1] if "--type" in sys.argv else "pyramid"
     run = sys.argv[sys.argv.index("--run")+1] if "--run" in sys.argv else "default"
+    device = sys.argv[sys.argv.index("--device")+1] if "--device" in sys.argv else "cuda"
+    pred_mode = sys.argv[sys.argv.index("--pred-mode")+1] if "--pred-mode" in sys.argv else "CONS"
     epochs = int(sys.argv[sys.argv.index("--epochs")+1]) if "--epochs" in sys.argv else 10
+    pred_epochs = int(sys.argv[sys.argv.index("--pred_epochs")+1]) if "--pred_epochs" in sys.argv else 5
     width = int(sys.argv[sys.argv.index("--width")+1]) if "--width" in sys.argv else 64
     nper = int(sys.argv[sys.argv.index("--nper")+1]) if "--nper" in sys.argv else 10
     folds = int(sys.argv[sys.argv.index("--folds")+1]) if "--folds" in sys.argv else 1
+    seeds = int(sys.argv[sys.argv.index("--seeds")+1]) if "--seeds" in sys.argv else 1
+    foldstart = int(sys.argv[sys.argv.index("--foldstart")+1]) if "--foldstart" in sys.argv else 0
     print("Model path:", model_path)
     shuffle = not ('-noshuff' in sys.argv)
     smart = '-smart' in sys.argv
@@ -172,8 +177,8 @@ if __name__ == "__main__":
     auc_dict = dict()
     for eval_setup in ['ball_within_template', 'ball_cross_template']:
         auccess.append(eval_setup)
-        for fold_id in range(folds):
-            solver = FlownetSolver(model_path, type, width, smart=smart, run=run)
+        for fold_id in range(foldstart+folds):
+            solver = FlownetSolver(model_path, type, width, smart=smart, run=run, num_seeds=seeds, device=device)
 
             train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
 
@@ -193,11 +198,15 @@ if __name__ == "__main__":
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=shuffle)
                     print(model_path, eval_setup, fold_id, "|| training 'brute search' models...")
                     solver.train_brute_search(epochs=epochs)
-                elif type=="test":
-                    print(model_path, eval_setup, fold_id, "|| loading data for test training...")
+                elif type=="combi":
+                    print(model_path, eval_setup, fold_id, "|| loading data for combi second stage training...")
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=shuffle)
-                    print(model_path, eval_setup, fold_id, "|| training test models...")
-                    solver.train_test(epochs=epochs)
+                    print(model_path, eval_setup, fold_id, "|| training predictor models...")
+                    solver.train_combi(epochs=pred_epochs, train_mode=pred_mode)
+                    print(model_path, eval_setup, fold_id, "|| loading data for combi first stage training...")
+                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
+                    print(model_path, eval_setup, fold_id, "|| training generator models...")
+                    solver.train_supervised(epochs=epochs)
                 else:
                     print(model_path, eval_setup, fold_id, "|| loading data for generative training...")
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
@@ -227,15 +236,21 @@ if __name__ == "__main__":
                     #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                     os.makedirs(f'result/solver/result/{solver.path}/{run}', exist_ok=True)
                     with open(f'result/solver/result/{solver.path}/{run}/{eval_setup}_{fold_id}.txt', 'w') as handle:
-                        handle.write(f"auccess: {local_auccess} \nepochs: 50")
+                        handle.write(f"auccess: {local_auccess}")
                     auccess.append(local_auccess)
-
-                else:
-                    local_auccess = solver.generative_auccess_old(test_ids, f'{eval_setup}_{fold_id}', pure_noise=noise)
+                elif type=="combi":
+                    local_auccess = solver.combi_auccess(test_ids, f'{eval_setup}_{fold_id}', pure_noise=noise)
                     #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                     os.makedirs(f'result/solver/result/{solver.path}/{run}', exist_ok=True)
                     with open(f'result/solver/result/{solver.path}/{run}/{eval_setup}_{fold_id}.txt', 'w') as handle:
-                        handle.write(f"auccess: {local_auccess} \nepochs: 50")
+                        handle.write(f"auccess: {local_auccess}")
+                    auccess.append(local_auccess)
+                else:
+                    local_auccess = solver.generative_auccess(test_ids, f'{eval_setup}_{fold_id}', pure_noise=noise)
+                    #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
+                    os.makedirs(f'result/solver/result/{solver.path}/{run}', exist_ok=True)
+                    with open(f'result/solver/result/{solver.path}/{run}/{eval_setup}_{fold_id}.txt', 'w') as handle:
+                        handle.write(f"auccess: {local_auccess}")
                     auccess.append(local_auccess)
 
             if "-solve-templ" in sys.argv:
@@ -256,8 +271,19 @@ if __name__ == "__main__":
                         auc_dict[f"{eval_setup}_{fold_id}_{template}"] = local_auccess
                         with open(f'result/solver/result/{solver.path}/{run}/auccess-dict.json', 'w') as fp:
                             json.dump(auc_dict, fp)
+                    elif type=="combi":
+                        local_auccess = solver.combi_auccess(ids, f'{eval_setup}_{fold_id}_{template}', pure_noise=noise)
+                        print(f"{template} auccess: {local_auccess}")
+                        #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
+                        os.makedirs(f'result/solver/result/{solver.path}/{run}', exist_ok=True)
+                        with open(f'result/solver/result/{solver.path}/{run}/individual_{eval_setup}_{fold_id}.txt', 'a') as handle:
+                            handle.write(f"\n{template} auccess: {local_auccess}")
+                        auccess.append(local_auccess)
+                        auc_dict[f"{eval_setup}_{fold_id}_{template}"] = local_auccess
+                        with open(f'result/solver/result/{solver.path}/{run}/auccess-dict.json', 'w') as fp:
+                            json.dump(auc_dict, fp)
                     else:
-                        local_auccess = solver.generative_auccess_old(ids, f'{eval_setup}_{fold_id}_{template}', pure_noise=noise)
+                        local_auccess = solver.generative_auccess(ids, f'{eval_setup}_{fold_id}_{template}', pure_noise=noise)
                         print(f"{template} auccess: {local_auccess}")
                         #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                         os.makedirs(f'result/solver/result/{solver.path}/{run}', exist_ok=True)
@@ -272,7 +298,7 @@ if __name__ == "__main__":
                     auccess.append( get_auccess(solver, test_ids+dev_ids, solve_noise=True, save_tries=True) )
                     os.makedirs(f'result/solver/result/{solver.path}', exist_ok=True)
                     with open(f'result/solver/result/{solver.path}/{eval_setup}_{fold_id}.txt', 'w') as handle:
-                        handle.write(f"auccess: {auccess[-1]} \nepochs: 50")
+                        handle.write(f"auccess: {auccess[-1]}")
                     """
 
             """
@@ -290,5 +316,4 @@ if __name__ == "__main__":
                 auccess_per_task[filter_task] = auccess
             print(auccess_per_task)
             """
-
     print(auccess)

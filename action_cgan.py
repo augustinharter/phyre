@@ -39,6 +39,8 @@ if __name__ == "__main__":
     parser.add_argument('-lingen', action='store_true')
     parser.add_argument('-sequ', action='store_true')
     parser.add_argument('-load', action='store_true')
+    parser.add_argument('-viz', action='store_true')
+    parser.add_argument('-cons', action='store_true')
     parser.add_argument('-overfit', action='store_true')
     parser.add_argument('--epochs', default=10, type=int)
     parser.add_argument('--width', default=16, type=int)
@@ -348,22 +350,47 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
     wid = fakes.shape[2]
     num_cells = fakes.shape[0]
     s = cond_batch.cpu()
+    border = T.sum(s, dim=1)[:,None]==s.shape[1]
+    border.reshape(num_cells,1,wid,wid).numpy()
+    border = np.pad(np.concatenate((border, border, border), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0)
+
+    def remove(pic, back):
+        pic[back] = 0
+        return pic
 
     # composing original scene    
     back = s[:,3].reshape(num_cells,1,wid,wid).numpy()
     #print(s[:,0].shape)
     green = np.max(np.stack((0.5*s[:,0],s[:,1],0.5*s[:,2],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
 
+    green0 = s[:,0].reshape(num_cells,1,wid,wid).numpy()
+    green1 = s[:,1].reshape(num_cells,1,wid,wid).numpy()
+    green2 = s[:,2].reshape(num_cells,1,wid,wid).numpy()
+    redminus = s[:,4].reshape(num_cells,1,wid,wid).numpy()
+    redzero = s[:,5].reshape(num_cells,1,wid,wid).numpy()
+
     red = np.max(np.stack((0*actions[:,0],actions[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     red2 = np.max(np.stack((0*actions[:,1],actions[:,0],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     orig = np.pad(np.concatenate((red, green, red2), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=1)
+    orig_empty = np.pad(np.concatenate((back[:,None,0], green, back[:,None,0]), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
+
+    gt_red = np.pad(np.concatenate((redminus, 0*redminus, 0*redminus), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
+    gt_red2 = np.pad(np.concatenate((0*back, 0*back, redzero), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
+    gt_green0 = np.pad(np.concatenate((0*back, green0, 0*back), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
+    gt_green1 = np.pad(np.concatenate((0*back, green1,0*back), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
+    gt_green2 = np.pad(np.concatenate((0*back, green2, 0*back), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
 
     # composing scene with generated action
     red = np.max(np.stack((g[:,0],0*g[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     red2 = np.max(np.stack((0*g[:,0],g[:,1],back[:,0]), axis=-1), axis=-1).reshape(num_cells,1,wid,wid)
     gen = np.pad(np.concatenate((red, green, red2), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
+    gen0 = np.pad(np.concatenate((red, green, back), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
     #print(combined)
+    pred_red = np.pad(np.concatenate((redminus, 0*back, 0*back), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
+    pred_red2 = np.pad(np.concatenate((0*back, 0*back, redzero), axis=1), ((0,0), (0,0), (1,1), (1,1)), constant_values=0.5)
     combined = np.concatenate((orig, gen), axis=1).reshape(2*num_cells,3,wid+2,wid+2)
+    if args.viz:
+        combined = orig.reshape(num_cells,3,wid+2,wid+2)
     grid = make_grid(T.tensor(combined), nrow=8, normalize=True)
     #plt.imshow(grid[0])
     #plt.show(block=False)
@@ -374,6 +401,37 @@ def generate(generator, cond_batch, n_per_sample, path, save_id, grid=0, sequ = 
     save_image(grid, f'./result/action_cgan/{path}/{save_id}grid.png')
     #plt.show()
 
+
+    def transform(pic, border=None):
+        print(pic.shape)
+        if border is not None:
+            pic = remove(pic, border)
+        pic = T.from_numpy(pic)
+        pic = pic.transpose(1,3).transpose(1,2)
+        #pic = pic[None,0]
+        return pic
+
+
+    orig = transform(orig)
+    orig_empty = transform(orig_empty)
+    gt_green0 = transform(gt_green0, border)
+    gt_green1 = transform(gt_green1, border)
+    gt_green2 = transform(gt_green2, border)
+    gt_red = transform(gt_red, border)
+    gt_red2 = transform(gt_red2, border)
+    pred_red = transform(pred_red, border)
+    pred_red2 = transform(pred_red2, border)
+    gen = transform(gen)
+    gen0 = transform(gen0)
+
+    print(orig.shape)
+    text = ["complete\nscene", "condition\nscene without\nred ball", "scene with\nstage 1 result", "scene with\nstage 1 & 2\nresult"]
+    pb = T.stack((orig,orig_empty, gen0, gen), dim=1)
+    print(pb.shape)
+    for i in range(s.shape[0]):
+        lpb = pb[i,None]
+        vis_batch(lpb, "result/visuals", f"compact-{i}-cgan-pipe-visual", text=text)
+
 def save_models(models, save_path):
     os.makedirs(save_path, exist_ok=True)
     for model in models:
@@ -381,7 +439,6 @@ def save_models(models, save_path):
         T.save(models[model].state_dict(), save_path+f'/{model}.pt')
 
 def load_models(models, load_path):
-    os.makedirs(load_path, exist_ok=True)
     for model in models:
         print("loading:", load_path+f'/{model}.pt')
         models[model].load_state_dict(T.load(load_path+f'/{model}.pt'))
@@ -441,9 +498,14 @@ if __name__ == "__main__":
     else:
         for i, (batch, ) in enumerate(data_loader):
             batch = batch.to(device)
+            if args.init:
+                batch = batch[:,[0,1,2,3,6,5]]
+            else:
+                batch = batch[:,:6]
             if i ==10:
                 break
-            generate(generator, batch[:32], 1, args.path+'-eval', str(epoch)+'_2', sequ=generator2 if args.sequ else None, device=device, GT=False)
-            generate(generator, batch[:32], 1, args.path+'-eval', epoch, sequ=generator2 if args.sequ else None, device=device, GT=False)
-            generate(generator, batch[:32], 1, args.path+'-eval', str(epoch)+'_GT', sequ=generator2 if args.sequ else None, device=device)
-            generate(generator, batch[:32], 1, args.path+'-eval', str(epoch)+'_GT_2', sequ=generator2 if args.sequ else None, device=device)
+            size = 64 if args.viz else 32
+            generate(generator, batch[:size], 1, args.path+'-eval', f"{i}_grid"+'_2', sequ=generator2 if args.sequ else None, device=device, GT=False)
+            generate(generator, batch[:size], 1, args.path+'-eval', f"{i}_grid", sequ=generator2 if args.sequ else None, device=device, GT=False)
+            generate(generator, batch[:size], 1, args.path+'-eval', f"{i}_grid"+'_GT', sequ=generator2 if args.sequ else None, device=device)
+            generate(generator, batch[:size], 1, args.path+'-eval', f"{i}_grid"+'_GT_2', sequ=generator2 if args.sequ else None, device=device)

@@ -65,7 +65,7 @@ def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=Tru
     dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), batch_size, shuffle=shuffle)
     return dataloader, index
 
-def vis_batch(batch, path, pic_id, text = [], save=True):
+def vis_batch(batch, path, pic_id, text = [], rows=[], descr=[], save=True, font_size=11):
     #print(batch.shape)
 
     if len(batch.shape) == 4:
@@ -81,19 +81,43 @@ def vis_batch(batch, path, pic_id, text = [], save=True):
     if np.max(reshaped.numpy())>1.0:
         reshaped = reshaped/256
     os.makedirs(path, exist_ok=True)
-    if text:
-        text_height= 40
+    if text or rows or descr:
+        if rows:
+            row_width = 20
+        else:
+            row_width = 0
+
+        if descr:
+            descr_wid = 50
+        else:
+            descr_wid = 0
+        if text:
+            text_height= 40
+        else:
+            text_height=0
+
         if len(reshaped.shape) == 2:
-            reshaped = F.pad(reshaped, (0,0,text_height,0), value=1)
+            reshaped = F.pad(reshaped, (row_width,descr_wid,text_height,0), value=1)
             img = Image.fromarray(np.uint8(reshaped.numpy()*255), mode="L")
         elif len(reshaped.shape) == 3:
-            reshaped = F.pad(reshaped, (0,0,0,0,text_height,0), value=1)
+            reshaped = F.pad(reshaped, (0,0,row_width,descr_wid,text_height,0), value=1)
             img = Image.fromarray(np.uint8(reshaped.numpy()*255))
-        font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 9)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", font_size)
         draw = ImageDraw.Draw(img)
+        
         for i, words in enumerate(text):
-            x, y = i*reshaped.shape[1]//len(text), 0
+            x, y = row_width+i*(reshaped.shape[1]-row_width-descr_wid)//len(text), 0
             draw.text((x, y), words, fill=(0) if len(reshaped.shape)==2 else (0,0,0), font=font)
+
+        for j, words in enumerate(rows):
+            x,y = 3, 10+text_height+j*(reshaped.shape[0]-text_height)//len(rows)
+            draw.text((x, y), words, fill=(0) if len(reshaped.shape)==2 else (0,0,0), font=font)
+        
+        for j, words in enumerate(descr):
+            x,y =  5+reshaped.shape[1]-descr_wid, text_height+j*(reshaped.shape[0]-text_height)//len(descr)
+            #print(x,y)
+            draw.text((x, y), words, fill=(0) if len(reshaped.shape)==2 else (0,0,0), font=font)
+
         if save:
             img.save(f'{path}/'+pic_id+'.png')
         else:
@@ -152,6 +176,67 @@ def gifify(batch, path, pic_id, text = [], constant=None):
         
     frames[0].save(f'{path}/'+pic_id+'.gif', save_all=True, append_images=frames[1:], optimize=True, duration=300, loop=0)
 
+def make_visuals():
+    sim = phyre.initialize_simulator(["00018:013", "00020:007", "00018:035"], 'ball')
+    res = sim.simulate_action(0, sim.sample(0), stride=40)
+    while not res.status.is_solved():
+        res = sim.simulate_action(0, sim.sample(0), stride=40)
+    #init.save("result/visuals/init1.png")
+    
+    obs = phyre.observations_to_uint8_rgb(sim.initial_scenes[0])
+    obs = np.pad(obs, ((5,5),(5,5),(0,0)))
+    init1 = Image.fromarray(obs)
+    init = init1.copy()
+    for frame in res.images:
+        obs = phyre.observations_to_uint8_rgb(frame)
+        obs = np.pad(obs, ((5,5),(5,5),(0,0)))
+        frame = np.pad(frame, ((5,5),(5,5)))
+
+        objects = Image.fromarray(np.flip((frame!=0), axis=0).astype(np.uint8)*100)
+        pic = Image.fromarray(obs)
+        #pic.putalpha(0.5)
+        init.paste(pic, (0,0), objects)
+    blended1 = init
+
+    res = sim.simulate_action(1, sim.sample(1), stride=20)
+    while not res.status.is_solved():
+        res = sim.simulate_action(1, sim.sample(1), stride=20)
+    #init.save("result/visuals/init1.png")
+
+    obs = phyre.observations_to_uint8_rgb(sim.initial_scenes[1])
+    obs = np.pad(obs, ((5,5),(5,5),(0,0)))
+    init2 = Image.fromarray(obs)    
+    init = init2.copy()
+    for frame in res.images:
+        obs = phyre.observations_to_uint8_rgb(frame)
+        obs = np.pad(obs, ((5,5),(5,5),(0,0)))
+        frame = np.pad(frame, ((5,5),(5,5)))
+
+        objects = Image.fromarray(np.flip((frame!=0), axis=0).astype(np.uint8)*100)
+        pic = Image.fromarray(obs)
+        #pic.putalpha(0.5)
+        init.paste(pic, (0,0), objects)
+    blended2 = init
+
+    base = 256+10
+    back = Image.new("RGB",(4*base+15, base))
+    back.paste(init1, (0,0))
+    back.paste(blended1, (base+5,0))
+    back.paste(init2, (2*base+10,0))
+    back.paste(blended2, (3*base+15,0))
+    os.makedirs("result/visuals", exist_ok=True)
+    back.save("result/visuals/phyre.png")
+
+
+    """
+    obs = phyre.observations_to_uint8_rgb(sim.initial_scenes)
+    print(obs.shape)
+    padded = np.flip(np.pad(obs, ((0,0),(5,5),(5,5),(0,0))), axis=1)
+    print(padded.shape)
+    init = Image.fromarray(np.concatenate(padded, axis=1))
+    """
+    #init.save("result/visuals/blended1.png")
+    #objects.save("result/visuals/red.png")"""
 
 def prepare_data(data, size):
     targetchannel = 1
@@ -294,7 +379,7 @@ def action_delta_generator(pure_noise=False):
     count = 0
     while True:
         count += 1
-        action = ((np.random.randn(3))*np.array([0.2,0.1,0.2])*temp)*0.2
+        action = ((np.random.randn(3))*np.array([0.2,0.1,0.2])*temp)*0.1
         #print(count,"th", "ACTION:", action)
         if np.linalg.norm(action)<0.05:
             continue
@@ -314,7 +399,7 @@ def pic_to_action_vector(pic, r_fac=1):
     r = np.sqrt(pic.sum()/(3.141592*pic.shape[0]**2))
     return [X.item(), 1-Y.item(), r_fac*r.item()]
 
-def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_border=False):
+def grow_action_vector(pic, r_fac=1, show=False, num_seeds=1, mask=None, check_border=False, updates=5):
     id = int((T.rand(1)*100))
     #os.makedirs("result/flownet/solver/grower", exist_ok=True)
     #plt.imsave(f"result/flownet/solver/grower/{id}.png", pic)
@@ -379,7 +464,7 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=5, mask=None, check_b
         v = get_value(x,y,r)
         #plt.imshow(pic+draw_ball(wid,x,y,r))
         #plt.show()
-        for i in range(10):
+        for i in range(updates):
             x, y, r, v = move_and_grow(x,y,r,v)
             #r, v = grow(x,y,r,v)
             if show:
@@ -583,10 +668,25 @@ def get_auccess_for_n_tries(n):
         eva.maybe_log_attempt(0, phyre.SimulationStatus.SOLVED)
     return eva.get_auccess()
 
+def get_auccess_for_n_tries_first_only(n):
+    eva = phyre.Evaluator(['00000:000'])
+    for i in range(1,101):
+        if n==i:
+            eva.maybe_log_attempt(0, phyre.SimulationStatus.SOLVED)
+        else:
+            eva.maybe_log_attempt(0, phyre.SimulationStatus.NOT_SOLVED)
+    return eva.get_auccess()
+
 if __name__ == "__main__":
     #visualize_actions_from_cache(1000)
     #print(get_auccess_for_n_tries(10))
-    
+
+    for n in range(1,20):
+        print(get_auccess_for_n_tries_first_only(n))
+    exit()
+
+    make_visuals()
+    exit()
     # Collecting trajectory lookup
     pic = draw_ball(32,0.5,0.2,0.3) + draw_ball(32,0.5,0.5,0.1)
     print(grow_action_vector(pic, check_border=True, mask=draw_ball(32,0.5,0.5,0.1), show=True))
