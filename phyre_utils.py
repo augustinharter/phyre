@@ -9,6 +9,7 @@ import os
 import pickle
 import random
 import json
+import gzip
 from PIL import ImageDraw, Image, ImageFont
 
 
@@ -44,26 +45,48 @@ def make_mono_dataset_old(path, size=(32,32), save=True, tasks=[], shuffle=True)
     dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), 32, shuffle=shuffle)
     return dataloader, index
 
-def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=True, n_per_task=1, shuffle=True):
+def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=True, n_per_task=1, shuffle=True, proposal_dict=None, dijkstra=False):
     if os.path.exists(path+"/data.pickle") and os.path.exists(path+"/index.pickle"):
-        with open(path+'/data.pickle', 'rb') as fp:
-            data = pickle.load(fp)
-            X = T.tensor(data).float()
+        try:
+            with gzip.open(path+'/data.pickle', 'rb') as fp:
+                data = pickle.load(fp)
+                X = T.tensor(data).float()
+        except OSError as e:
+            print("WARNING still unzipped data file at", path)
+            with open(path+'/data.pickle', 'rb') as fp:
+                data = pickle.load(fp)
+                X = T.tensor(data).float()
         with open(path+'/index.pickle', 'rb') as fp:
             index = pickle.load(fp)
         print(f"Loaded dataset from {path} with shape:", X.shape)
     else:
         if tasks:
-            collect_solving_dataset(path, tasks, n_per_task=n_per_task, stride=5, size=size, solving=solving)
-        with open(path+'/data.pickle', 'rb') as fp:
+            collect_solving_dataset(path, tasks, n_per_task=n_per_task, stride=5, size=size, solving=solving, proposal_dict=proposal_dict, dijkstra=dijkstra)
+        with gzip.open(path+'/data.pickle', 'rb') as fp:
             data = pickle.load(fp)
         with open(path+'/index.pickle', 'rb') as fp:
             index = pickle.load(fp)
         X = T.tensor(data).float()
         print(f"Loaded dataset from {path} with shape:", X.shape)
         
+    X = X/255 # correct for uint8 encoding
     dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), batch_size, shuffle=shuffle)
     return dataloader, index
+
+def shrink_data(path):
+    for folder in os.listdir(path):
+        if folder.__contains__("64xy"):
+            print("loading:", folder)
+            try:
+                with open(path+'/'+folder+'/data.pickle', 'rb') as fp:
+                    data = pickle.load(fp)
+                    data = (np.array(data)*255).astype(np.uint8)
+                with gzip.GzipFile(path+'/'+folder+'/data.pickle', 'wb') as fp:
+                    pickle.dump(data, fp)
+            except Exception as e:
+                print(f"error loading {folder}:\n{e}")
+            finally:
+                print(folder, "finished")
 
 def vis_batch(batch, path, pic_id, text = [], rows=[], descr=[], save=True, font_size=11):
     #print(batch.shape)
@@ -83,7 +106,7 @@ def vis_batch(batch, path, pic_id, text = [], rows=[], descr=[], save=True, font
     os.makedirs(path, exist_ok=True)
     if text or rows or descr:
         if rows:
-            row_width = 20
+            row_width = 50
         else:
             row_width = 0
 
@@ -526,6 +549,38 @@ def rollouts_to_specific_paths(batch, channel, size=(32,32), gamma=1):
         trajectory[j] = base
     return trajectory
 
+def extract_individual_auccess(path):
+
+    with open(path+"/auccess-dict.json") as fp:
+        dic = json.load(fp)
+
+    w_res = dict((i,[]) for i in range(25))
+    c_res = dict((i,[]) for i in range(25))
+    keys = dic.keys()
+    w_keys = [k for k in keys if k.__contains__("within")]
+    c_keys = [k for k in keys if k.__contains__("cross")]
+    print(c_keys)
+
+    for k in w_keys:
+        templ = int(k.split('_')[4][-2:])
+        w_res[templ].append(dic[k])
+    print(w_res)
+
+    for k in c_keys:
+        templ = int(k.split('_')[4][-2:])
+        c_res[templ].append(dic[k])
+    print(c_res)
+    
+    with open(path+"/average-auccess-horizontal.txt", "w") as fp:
+        fp.write("within cross\n")
+        within = [sum(templ)/len(templ) for templ in [w_res[i] for i in range(25)]]
+        cross = [sum(templ)/len(templ) for templ in [(c_res[i] or [0]) for i in range(25)]]
+        #fp.writelines([f"{('0000'+str(i))[-5:]} {w} {c}\n" for i,(w,c) in enumerate(zip(within, cross))])
+        fp.writelines([str(round(item, 2))[-3:]+' & ' for item in within]+['\n'])
+        fp.writelines([str(round(item, 2))[-3:]+' & ' for item in cross]+['\n'])
+        fp.write(f"average {sum(within)/len(within)} {sum(cross)/(len(cross)-1)}")
+
+
 def collect_traj_lookup(tasks, save_path, number_per_task, show=False, stride=10):
     end_char = '\n'
     tries = 0
@@ -677,9 +732,34 @@ def get_auccess_for_n_tries_first_only(n):
             eva.maybe_log_attempt(0, phyre.SimulationStatus.NOT_SOLVED)
     return eva.get_auccess()
 
+def add_dijkstra_to_data(path):
+    if os.path.exists(path+"/data.pickle") and os.path.exists(path+"/index.pickle"):
+        with open(path+'/data.pickle', 'rb') as fp:
+            data = pickle.load(fp)
+            X = T.tensor(data).float()
+    else:
+        print("Path not found")
+    
+    for scene in X:
+        red = T.stack((X[:,0],X[:,0]*0,X[:,0]*0), dim=-1)
+        green = T.stack((X[:,1],X[:,0]*0,X[:,0]*0), dim=-1)
+        blues = T.stack((X[:,2],X[:,0]*0,X[:,0]*0), dim=-1)
+        blued = T.stack((X[:,3],X[:,0]*0,X[:,0]*0), dim=-1)
+        grey = T.stack((X[:,4],X[:,4],X[:,4]), dim=-1)
+        black = T.stack((X[:,5],X[:,0]*0,X[:,0]*0), dim=-1)
+
+
+
+
 if __name__ == "__main__":
     #visualize_actions_from_cache(1000)
     #print(get_auccess_for_n_tries(10))
+
+    shrink_data("./data")
+    exit()
+
+    extract_individual_auccess("./result/solver/result/GEN-64-20e/individ-10")
+    exit()
 
     for n in range(1,20):
         print(get_auccess_for_n_tries_first_only(n))

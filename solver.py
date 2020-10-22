@@ -10,6 +10,7 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 import sys
 import json
+import pickle
 
 def get_auccess(solver, tasks, solve_noise=False, save_tries=False, brute=False):
     if save_tries:
@@ -161,24 +162,30 @@ if __name__ == "__main__":
     run = sys.argv[sys.argv.index("--run")+1] if "--run" in sys.argv else "default"
     device = sys.argv[sys.argv.index("--device")+1] if "--device" in sys.argv else "cuda"
     pred_mode = sys.argv[sys.argv.index("--pred-mode")+1] if "--pred-mode" in sys.argv else "CONS"
+    train_mode = sys.argv[sys.argv.index("--train-mode")+1] if "--train-mode" in sys.argv else "CONS"
     epochs = int(sys.argv[sys.argv.index("--epochs")+1]) if "--epochs" in sys.argv else 10
-    pred_epochs = int(sys.argv[sys.argv.index("--pred_epochs")+1]) if "--pred_epochs" in sys.argv else 5
+    pred_epochs = int(sys.argv[sys.argv.index("--pred-epochs")+1]) if "--pred-epochs" in sys.argv else 5
     width = int(sys.argv[sys.argv.index("--width")+1]) if "--width" in sys.argv else 64
     nper = int(sys.argv[sys.argv.index("--nper")+1]) if "--nper" in sys.argv else 10
     folds = int(sys.argv[sys.argv.index("--folds")+1]) if "--folds" in sys.argv else 1
+    hidfac = float(sys.argv[sys.argv.index("--hidfac")+1]) if "--hidfac" in sys.argv else 1
     seeds = int(sys.argv[sys.argv.index("--seeds")+1]) if "--seeds" in sys.argv else 1
     foldstart = int(sys.argv[sys.argv.index("--foldstart")+1]) if "--foldstart" in sys.argv else 0
     print("Model path:", model_path)
+    gt_paths = "-gt-paths" in sys.argv
     shuffle = not ('-noshuff' in sys.argv)
     smart = '-smart' in sys.argv
     noise = not '-no-noise' in sys.argv
+    proposal_data = '-proposal-data' in sys.argv
+    no_scnd_stage = '-no-second-stage' in sys.argv
+    dijkstra = '-dijkstra' in sys.argv
 
     auccess = []
     auc_dict = dict()
     for eval_setup in ['ball_within_template', 'ball_cross_template']:
         auccess.append(eval_setup)
         for fold_id in range(foldstart+folds):
-            solver = FlownetSolver(model_path, type, width, smart=smart, run=run, num_seeds=seeds, device=device)
+            solver = FlownetSolver(model_path, type, width, smart=smart, run=run, num_seeds=seeds, device=device, hidfac=hidfac, dijkstra=dijkstra)
 
             train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
 
@@ -190,7 +197,7 @@ if __name__ == "__main__":
 
             if "-load" in sys.argv:
                 print(model_path, eval_setup, fold_id, "|| loading models...")
-                solver.load_models(setup=eval_setup, fold=fold_id)
+                solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage)
 
             if "-train" in sys.argv:
                 if type=="brute":
@@ -199,19 +206,30 @@ if __name__ == "__main__":
                     print(model_path, eval_setup, fold_id, "|| training 'brute search' models...")
                     solver.train_brute_search(epochs=epochs)
                 elif type=="combi":
+                    #print(model_path, eval_setup, fold_id, "|| loading data for combi first stage training...")
+                    #solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
+                    #print(model_path, eval_setup, fold_id, "|| training generator models...")
+                    #solver.train_supervised(epochs=epochs, train_mode=train_mode)
+                    if proposal_data:
+                        print(model_path, eval_setup, fold_id, "|| loading/generating proposals for combi second stage data collection...")
+                        proposals_path = f"./saves/{model_path}_{eval_setup}_{fold_id}_500_action_proposals"
+                        if os.path.exists(proposals_path+"/proposal-dict.pickle"):
+                            with open(proposals_path+"/proposal-dict.pickle", 'rb') as fp:
+                                proposal_dict = pickle.load(fp)
+                        else:
+                            proposal_dict = solver.get_proposals(train_ids, "proposals")
+                            os.makedirs(proposals_path, exist_ok=True)
+                            with open(proposals_path+"/proposal-dict.pickle", 'wb') as fp:
+                                pickle.dump(proposal_dict, fp)                       
                     print(model_path, eval_setup, fold_id, "|| loading data for combi second stage training...")
-                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=shuffle)
+                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=shuffle, proposal_dict=proposal_dict if proposal_data else None)
                     print(model_path, eval_setup, fold_id, "|| training predictor models...")
                     solver.train_combi(epochs=pred_epochs, train_mode=pred_mode)
-                    print(model_path, eval_setup, fold_id, "|| loading data for combi first stage training...")
-                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
-                    print(model_path, eval_setup, fold_id, "|| training generator models...")
-                    solver.train_supervised(epochs=epochs)
                 else:
                     print(model_path, eval_setup, fold_id, "|| loading data for generative training...")
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle)
                     print(model_path, eval_setup, fold_id, "|| training 'generative' models...")
-                    solver.train_supervised(epochs=epochs)
+                    solver.train_supervised(epochs=epochs, train_mode=train_mode)
 
             if "-save" in sys.argv:
                 print(model_path, eval_setup, fold_id, "|| saving models...")
@@ -223,7 +241,12 @@ if __name__ == "__main__":
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=shuffle, test=True)
                     print(model_path, eval_setup, fold_id, "|| inspecting brute performance...")
                     solver.inspect_brute_search(eval_setup, fold_id)
-                else:
+                elif type=="combi":
+                    print(model_path, eval_setup, fold_id, "|| loading data for combi testing...")
+                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=shuffle, test=True)
+                    print(model_path, eval_setup, fold_id, "|| inspecting second stage performance...")
+                    solver.inspect_combi(eval_setup, fold_id)
+                elif type == "pyramid":
                     print(model_path, eval_setup, fold_id, "|| loading data for generative testing...")
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, test=True)
                     print(model_path, eval_setup, fold_id, "|| inspecting generative performance...")
@@ -239,7 +262,7 @@ if __name__ == "__main__":
                         handle.write(f"auccess: {local_auccess}")
                     auccess.append(local_auccess)
                 elif type=="combi":
-                    local_auccess = solver.combi_auccess(test_ids, f'{eval_setup}_{fold_id}', pure_noise=noise)
+                    local_auccess = solver.combi_auccess(test_ids, f'{eval_setup}_{fold_id}', pure_noise=noise, gt_paths=gt_paths)
                     #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                     os.makedirs(f'result/solver/result/{solver.path}/{run}', exist_ok=True)
                     with open(f'result/solver/result/{solver.path}/{run}/{eval_setup}_{fold_id}.txt', 'w') as handle:

@@ -9,6 +9,8 @@ import json
 import random
 import cv2
 import matplotlib.pyplot as plt
+from dijkstra import find_distance_map_obj
+import gzip
 
 def collect_images():
     tries = 0
@@ -106,10 +108,10 @@ def collect_solving_observations(path, tasks, n_per_task = 10, collect_base=True
 
     print("FINISH collecting rollouts!")
 
-def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, stride=10, size=(32,32), solving=True):
+def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, stride=10, size=(32,32), solving=True, proposal_dict=None, dijkstra=False):
     end_char = '\n'
     tries = 0
-    max_tries = 100
+    max_tries = 510
     base_path = path
     number_to_solve = n_per_task
     cache = phyre.get_default_100k_cache('ball')
@@ -124,14 +126,21 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
     for task_idx, task in enumerate(tasks):
         # COLLECT SOLVES
         solved = 0
+        if proposal_dict is not None:
+            proposal_list = [item for item in proposal_dict[task]]
+        cache_list = actions[cache.load_simulation_states(task)==(1 if solving else -1)]
         while solved < number_to_solve:
             print(f"collecting {task}: trial {solved} with {tries+1} tries", end = end_char)
             tries += 1
-            action = actions[cache.load_simulation_states(task)==(1 if solving else -1)]
-            if len(action)==0:
+            if tries<max_tries-10 and (proposal_dict is not None):
+                actionlist = proposal_list
+            else:
+                actionlist = cache_list
+
+            if len(actionlist)==0:
                 print("WARNING no solution action in cache at task", task)
-                action = [np.random.rand(3)]
-            action = random.choice(action)
+                actionlist = [np.random.rand(3)]
+            action = random.choice(actionlist)
             res = sim.simulate_action(task_idx, action,
                 need_featurized_objects=True, stride=stride)
 
@@ -174,7 +183,17 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
                 paths = np.flip(np.max(paths, axis=1).astype(float), axis=1)
                 base = np.flip(np.max(base_frames, axis=1).astype(float), axis=1)
                 init_scene = np.flip(init_scene, axis=1)
-                combined = np.concatenate([init_scene, base, paths])
+
+                # make distance map
+                if dijkstra:
+                    dm_init_scene = sim.initial_scenes[task_idx]
+                    img = cv2.resize(phyre.observations_to_float_rgb(dm_init_scene),size, cv2.INTER_MAX)  # read image
+                    target = np.logical_or(init_scene[2]==1, init_scene[3]==1)
+                    # cv2.imwrite('maze-initial.png', img)
+                    distance_map = find_distance_map_obj(img, target)
+                    combined = (255*np.concatenate([init_scene, base, paths, distance_map[None]])).astype(np.uint8)
+                else:
+                    combined = (255*np.concatenate([init_scene, base, paths, base*0])).astype(np.uint8)
 
                 # append data set and lib_dict
                 data.append(combined)
@@ -187,8 +206,9 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
                 break
     
     os.makedirs(path, exist_ok=True)
-    with open(path+'/data.pickle', 'wb') as fp:
-        pickle.dump(data, fp)
+    file = gzip.GzipFile(path+'/data.pickle', 'wb')
+    pickle.dump(data, file)
+    file.close()
     with open(path+'/index.pickle', 'wb') as fp:
         pickle.dump(lib_dict, fp)
 
