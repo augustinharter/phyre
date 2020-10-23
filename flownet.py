@@ -786,7 +786,7 @@ class FlownetSolver():
                 target = np.logical_or(all_initial_scenes[task_idx,1]==1, all_initial_scenes[task_idx,2]==1)
                 # cv2.imwrite('maze-initial.png', img)
                 distance_map = find_distance_map_obj(img, target)
-                all_distance_maps[task_idx,0] = T.from_numpy(distance_map)
+                all_distance_maps[task_idx,0] = T.from_numpy(distance_map/255)
         
 
         for batch in range(num_batches):
