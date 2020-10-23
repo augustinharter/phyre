@@ -1773,6 +1773,7 @@ class FlownetSolver():
                     target_pred = tar_net(T.cat((init_scenes, dist_map), dim=1))
                 else:
                     target_pred = tar_net(init_scenes)
+
                 base_pred = base_net(init_scenes)
                 if modus=='GT':
                     action_pred = act_net(T.cat((init_scenes, target_paths[:,None], base_paths[:,None]), dim=1))
@@ -1787,7 +1788,7 @@ class FlownetSolver():
                     action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
                     ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
                 
-                if not i%100:
+                if not i%100: #VISUALIZATION
                     os.makedirs(f'result/flownet/training/{self.path}/{self.run}', exist_ok=True)
                     #print_batch = T.cat((X, base_pred, target_pred, action_pred, ball_pred), dim=1).detach()
                     #text = ['red', 'green', 'blue', 'blue', 'grey', 'black', 'base', 'target', 'goal\nnot used', 'action', 'base', 'target', 'action', 'red ball']
@@ -1839,7 +1840,7 @@ class FlownetSolver():
                 opti.step()
                 log.append(loss.item())
 
-        with open(f'result/flownet/inspect/{self.path}/{self.run}/loss.txt') as fp:
+        with open(f'result/flownet/training/{self.path}/{self.run}/loss.txt') as fp:
             fp.write(f"avg-loss {sum(log)/len(log)}") 
             fp.write(f"avg-ten-smallest-losses {sum(sorted(log)[:10])/10}") 
     
@@ -2433,6 +2434,7 @@ class FlownetSolver():
                         rpb = (pbr[j])[:,None]
                         tmp_pb = T.cat((lpb, rpb), dim=1)
                         vis_batch(tmp_pb, f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}', f'visual_{i}_{j}', rows=text_left, descr=text_right)
+                        
         with open(f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}/loss.txt') as fp:
             fp.write(f"avg-loss {sum(log)/len(log)}") 
             fp.write(f"avg-ten-smallest-losses {sum(sorted(log)[:10])/10}") 
