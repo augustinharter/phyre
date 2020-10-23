@@ -187,10 +187,10 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
                 # make distance map
                 if dijkstra:
                     dm_init_scene = sim.initial_scenes[task_idx]
-                    img = cv2.resize(phyre.observations_to_float_rgb(dm_init_scene),size, cv2.INTER_MAX)  # read image
+                    img = cv2.resize(phyre.observations_to_float_rgb(dm_init_scene), size, cv2.INTER_MAX)  # read image
                     target = np.logical_or(init_scene[2]==1, init_scene[3]==1)
                     # cv2.imwrite('maze-initial.png', img)
-                    distance_map = find_distance_map_obj(img, target)
+                    distance_map = find_distance_map_obj(img, target)/255
                     combined = (255*np.concatenate([init_scene, base, paths, distance_map[None]])).astype(np.uint8)
                 else:
                     combined = (255*np.concatenate([init_scene, base, paths, base*0])).astype(np.uint8)
