@@ -179,6 +179,7 @@ if __name__ == "__main__":
     proposal_data = '-proposal-data' in sys.argv
     no_scnd_stage = '-no-second-stage' in sys.argv
     dijkstra = '-dijkstra' in sys.argv
+    final = '-final' in sys.argv
 
     auccess = []
     auc_dict = dict()
@@ -188,6 +189,10 @@ if __name__ == "__main__":
             solver = FlownetSolver(model_path, type, width, smart=smart, run=run, num_seeds=seeds, device=device, hidfac=hidfac, dijkstra=dijkstra)
 
             train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+            if final:
+                dev_ids = []
+            else:
+                train_ids = train_ids + dev_ids
 
             if "-get-all-data" in sys.argv:
                 solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=shuffle)
