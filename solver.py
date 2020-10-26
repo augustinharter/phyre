@@ -190,9 +190,10 @@ if __name__ == "__main__":
 
             train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
             if final:
+                train_ids = train_ids + dev_ids
                 dev_ids = []
             else:
-                train_ids = train_ids + dev_ids
+                test_ids = []
 
             if "-get-all-data" in sys.argv:
                 solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=shuffle)
