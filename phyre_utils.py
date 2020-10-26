@@ -106,16 +106,16 @@ def vis_batch(batch, path, pic_id, text = [], rows=[], descr=[], save=True, font
     os.makedirs(path, exist_ok=True)
     if text or rows or descr:
         if rows:
-            row_width = font_size//2*max([len(item) for item in rows])
+            row_width = int(1.5*font_size//2*max([len(item) for item in rows]))
         else:
             row_width = 0
 
         if descr:
-            descr_wid = font_size//2*max([len(item) for item in descr])
+            descr_wid = int(1.5*font_size//2*max([len(item) for item in descr]))
         else:
             descr_wid = 0
         if text:
-            text_height= font_size*max([len(item.split('\n')) for item in text])
+            text_height= int(1.5*font_size*max([len(item.split('\n')) for item in text]))
         else:
             text_height=0
 

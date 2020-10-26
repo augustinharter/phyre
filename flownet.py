@@ -1695,14 +1695,13 @@ class FlownetSolver():
             text = ['scene','scene\nprediction', 'confidence']
             vis_batch(self.cut_off(diff_batch.cpu()), f'result/flownet/solving/{self.path}/{self.run}', f'{task}_best_actions_diff', text=text)
 
-    def load_data(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[], brute_search=False, n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None):
+    def load_data(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[], brute_search=False, n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None, batch_size = 32):
         fold_id = fold
         eval_setup = setup
         width = self.width
-        batchsize = 32
         dijkstra_str = "_dijkstra" if self.dijkstra else ""
 
-        if train_tasks and test_tasks:
+        if train_tasks or test_tasks:
             train_ids = train_tasks
             test_ids = test_tasks
         else:
@@ -1718,14 +1717,14 @@ class FlownetSolver():
                 size=(width,width), tasks=train_ids[:], batch_size=batchsize//2 if brute_search else batchsize, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
         else:
             self.test_dataloader, self.test_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_test_{width}xy_{n_per_task}n", 
-                size=(width,width), tasks=test_ids, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
+                size=(width,width), tasks=test_ids, n_per_task=n_per_task, shuffle=False, proposal_dict=proposal_dict, dijkstra=self.dijkstra, batch_size = batch_size)
         if brute_search:
             if not test:
                 self.failed_dataloader, self.failed_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_train_{width}xy_{n_per_task}n", 
                     size=(width,width), tasks=train_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
             else:
                 self.failed_test_dataloader, self.failed_test_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_test_{width}xy_{n_per_task}n", 
-                    size=(width,width), tasks=test_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
+                    size=(width,width), tasks=test_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task, shuffle=False, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
         os.makedirs(f'result/flownet/training/{self.path}', exist_ok=True)
         with open(f'result/flownet/training/{self.path}/namespace.txt', 'w') as handle:
             handle.write(f"{self.modeltype} {setup} {fold}")
@@ -1842,7 +1841,9 @@ class FlownetSolver():
 
         with open(f'result/flownet/training/{self.path}/{self.run}/loss.txt', "w") as fp:
             fp.write(f"avg-loss {sum(log)/len(log)}\n") 
-            fp.write(f"avg-ten-smallest-losses {sum(sorted(log)[:10])/10}") 
+            fp.write(f"avg-ten-smallest-losses {sum(sorted(log)[:10])/10}")
+            for line in log:
+                fp.write(f"{line}\n") 
     
     def train_brute_search(self, train_mode='CONS', epochs=10):
         self.to_train()
@@ -2239,9 +2240,10 @@ class FlownetSolver():
         with open(f'result/solver/result/{self.path}/{self.run}/classification_{eval_setup}_fold_{fold}.txt', 'a') as fp:
             fp.write(f"\naccuracy {accuracy}\nrecall {recall}\nprecision {precision}")
 
-    def inspect_supervised(self, eval_setup, fold, train_mode='CONS', epochs=1):
+    def inspect_supervised(self, eval_setup, fold, train_mode='CONS', epochs=1, single_viz = False):
         self.to_train()
         data_loader = self.test_dataloader
+        print("batch size", data_loader.batch_size)
         index = self.test_index
         tar_net = self.models["tar_net"]
         base_net = self.models["base_net"]
@@ -2259,7 +2261,8 @@ class FlownetSolver():
 
         for epoch in range(epochs):
             for i, (X,) in enumerate(data_loader):
-                X = X[:X.shape[0]//4].to(self.device)
+                X = X.to(self.device)
+                print("x shape", X.shape)
                 # Prepare Data
                 action_balls = X[:,0]
                 init_scenes = X[:,1:6]
@@ -2312,14 +2315,14 @@ class FlownetSolver():
                     log.append(loss.item())
 
                 # VISUALIZATION
-                if self.viz and not i%self.viz:
+                if True or self.viz and not i%self.viz:
                     os.makedirs(f'result/flownet/inspect/{self.path}/{self.run}', exist_ok=True)
                     #Z = X.cpu()
                     #vis_batch(T.stack((Z, T.zeros_like(Z), T.zeros_like(Z)), dim=-1), "result/test", "color", text=["hello!"])
 
                     print_batch = T.cat((init_scenes, goal_paths[:,None], base_paths[:,None], base_pred, target_paths[:,None],target_pred, 
                         action_paths[:,None], action_pred, ball_pred, action_balls[:,None]), dim=1).detach()
-                    rows = [str(num) for num in range(X.shape[0])]
+                    rows = index
                     text = [
                         'GT\ngreen ball',
                         'GT\nblue dynamic\nobject',
@@ -2376,68 +2379,74 @@ class FlownetSolver():
                         print_dms = T.stack((dist_map, dist_map, dist_map), dim =-1)
                         diff_batch = T.cat((diff_batch, print_dms.cpu()), dim=1)
                         text.append("dijkstra")
+                    
                     vis_batch(self.cut_off(diff_batch.cpu()), f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}', f'poch_{epoch}_{i}_diff', text=text, rows=rows)
-                    scene = T.stack((background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)
-                    diff_batch_left = T.cat((
-                        scene, 
-                        scene+T.stack((base_pred*0, base_paths[:,None], 0*base_paths[:,None]),dim=-1), 
-                        scene+T.stack(( 0*target_pred, target_paths[:,None], 0*target_paths[:,None]),dim=-1),
-                        scene+T.stack((action_paths[:,None], 0*action_pred,0*action_paths[:,None]),dim=-1), 
-                        scene+T.stack((action_balls[:,None], 0*ball_pred, T.zeros_like(ball_pred)),dim=-1),
-                        scene+T.stack((action_balls[:,None], 0*ball_pred, T.zeros_like(ball_pred)),dim=-1),
-                        T.stack((action_balls[:,None]+background+action_paths[:,None], target_paths[:,None]+init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)), 
-                        dim=1).detach()
-                    diff_batch_right = T.cat((
-                        0*scene, 
-                        scene+T.stack((base_pred*0, base_pred, 0*base_paths[:,None]),dim=-1), 
-                        scene+T.stack(( 0*target_paths[:,None], target_pred, 0*target_pred),dim=-1),
-                        scene+T.stack((action_pred, 0*action_paths[:,None], 0*action_paths[:,None]),dim=-1), 
-                        scene+T.stack((ball_pred, 0*action_balls[:,None], T.zeros_like(ball_pred)),dim=-1),
-                        T.stack((drawings+ball_pred+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1),
-                        T.stack((drawings+background+action_pred, target_pred+init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)),
-                        dim=1).detach()
+                    T.save(diff_batch.cpu(), f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}/eval-viz-tensor.pt')
+                        
+                    if single_viz:
+                        scene = T.stack((background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)
+                        diff_batch_left = T.cat((
+                            scene, 
+                            scene+T.stack((base_pred*0, base_paths[:,None], 0*base_paths[:,None]),dim=-1), 
+                            scene+T.stack(( 0*target_pred, target_paths[:,None], 0*target_paths[:,None]),dim=-1),
+                            scene+T.stack((action_paths[:,None], 0*action_pred,0*action_paths[:,None]),dim=-1), 
+                            scene+T.stack((action_balls[:,None], 0*ball_pred, T.zeros_like(ball_pred)),dim=-1),
+                            scene+T.stack((action_balls[:,None], 0*ball_pred, T.zeros_like(ball_pred)),dim=-1),
+                            T.stack((action_balls[:,None]+background+action_paths[:,None], target_paths[:,None]+init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)), 
+                            dim=1).detach()
+                        diff_batch_right = T.cat((
+                            0*scene, 
+                            scene+T.stack((base_pred*0, base_pred, 0*base_paths[:,None]),dim=-1), 
+                            scene+T.stack(( 0*target_paths[:,None], target_pred, 0*target_pred),dim=-1),
+                            scene+T.stack((action_pred, 0*action_paths[:,None], 0*action_paths[:,None]),dim=-1), 
+                            scene+T.stack((ball_pred, 0*action_balls[:,None], T.zeros_like(ball_pred)),dim=-1),
+                            T.stack((drawings+ball_pred+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1),
+                            T.stack((drawings+background+action_pred, target_pred+init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)),
+                            dim=1).detach()
 
-                    diff_batch_left = self.cut_off(diff_batch_left.cpu())
-                    white = T.ones_like(diff_batch_left)
-                    white[:,:,:,:,[0,1]] -= diff_batch_left[:,:,:,:,None,2].repeat(1,1,1,1,2)
-                    white[:,:,:,:,[0,2]] -= diff_batch_left[:,:,:,:,None,1].repeat(1,1,1,1,2)
-                    white[:,:,:,:,[1,2]] -= diff_batch_left[:,:,:,:,None,0].repeat(1,1,1,1,2)
-                    diff_batch_left = white
+                        diff_batch_left = self.cut_off(diff_batch_left.cpu())
+                        white = T.ones_like(diff_batch_left)
+                        white[:,:,:,:,[0,1]] -= diff_batch_left[:,:,:,:,None,2].repeat(1,1,1,1,2)
+                        white[:,:,:,:,[0,2]] -= diff_batch_left[:,:,:,:,None,1].repeat(1,1,1,1,2)
+                        white[:,:,:,:,[1,2]] -= diff_batch_left[:,:,:,:,None,0].repeat(1,1,1,1,2)
+                        diff_batch_left = white
 
-                    diff_batch_right = self.cut_off(diff_batch_right.cpu())
-                    white = T.ones_like(diff_batch_right)
-                    white[:,:,:,:,[0,1]] -= diff_batch_right[:,:,:,:,None,2].repeat(1,1,1,1,2)
-                    white[:,:,:,:,[0,2]] -= diff_batch_right[:,:,:,:,None,1].repeat(1,1,1,1,2)
-                    white[:,:,:,:,[1,2]] -= diff_batch_right[:,:,:,:,None,0].repeat(1,1,1,1,2)
-                    diff_batch_right = white
+                        diff_batch_right = self.cut_off(diff_batch_right.cpu())
+                        white = T.ones_like(diff_batch_right)
+                        white[:,:,:,:,[0,1]] -= diff_batch_right[:,:,:,:,None,2].repeat(1,1,1,1,2)
+                        white[:,:,:,:,[0,2]] -= diff_batch_right[:,:,:,:,None,1].repeat(1,1,1,1,2)
+                        white[:,:,:,:,[1,2]] -= diff_batch_right[:,:,:,:,None,0].repeat(1,1,1,1,2)
+                        diff_batch_right = white
 
-                    text_right = ['',
-                        'predicted\nbase path',
-                        'predicted\ntarget path',
-                        'predicted\naction path',
-                        'predicted\naction ball\nposition',
-                        'sampled\naction ball',
-                        'combined\npredictions']
+                        text_right = ['',
+                            'predicted\nbase path',
+                            'predicted\ntarget path',
+                            'predicted\naction path',
+                            'predicted\naction ball\nposition',
+                            'sampled\naction ball',
+                            'combined\npredictions']
 
-                    text_left = ['initial\nscene',
-                        'ground truth\nbase path',
-                        'ground truth\ntarget\npath',
-                        'ground truth\naction\npath',
-                        'ground truth\ninitial action\nball position',
-                        'ground truth\ninitial action\nball position',
-                        'all GT\npaths']
+                        text_left = ['initial\nscene',
+                            'ground truth\nbase path',
+                            'ground truth\ntarget\npath',
+                            'ground truth\naction\npath',
+                            'ground truth\ninitial action\nball position',
+                            'ground truth\ninitial action\nball position',
+                            'all GT\npaths']
 
-                    pbl = self.cut_off(diff_batch_left.cpu())
-                    pbr = self.cut_off(diff_batch_right.cpu())
-                    for j in range(pbl.shape[0]):
-                        lpb = (pbl[j])[:,None]
-                        rpb = (pbr[j])[:,None]
-                        tmp_pb = T.cat((lpb, rpb), dim=1)
-                        vis_batch(tmp_pb, f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}', f'visual_{i}_{j}', rows=text_left, descr=text_right)
+                        pbl = self.cut_off(diff_batch_left.cpu())
+                        pbr = self.cut_off(diff_batch_right.cpu())
+                        for j in range(pbl.shape[0]):
+                            lpb = (pbl[j])[:,None]
+                            rpb = (pbr[j])[:,None]
+                            tmp_pb = T.cat((lpb, rpb), dim=1)
+                            vis_batch(tmp_pb, f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}', f'visual_{i}_{j}', rows=text_left, descr=text_right)
 
         with open(f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}/loss.txt', "w") as fp:
             fp.write(f"avg-loss {sum(log)/len(log)}\n") 
-            fp.write(f"avg-ten-smallest-losses {sum(sorted(log)[:10])/10}") 
+            fp.write(f"avg-ten-smallest-losses {sum(sorted(log)[:10])/10}")
+            for line in log:
+                fp.write(f"{line}\n")
 
     def inspect_brute_search(self, eval_setup, fold, train_mode='CONS', epochs=1):
         self.to_train()

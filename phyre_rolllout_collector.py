@@ -121,6 +121,7 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
     channels = range(1,7)
     data = []
     lib_dict = dict()
+    task_list = []
 
     sim = phyre.initialize_simulator(tasks, 'ball')
     for task_idx, task in enumerate(tasks):
@@ -197,6 +198,7 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
 
                 # append data set and lib_dict
                 data.append(combined)
+                task_list.append(task)
                 if task in lib_dict:
                     lib_dict[task].append(len(data)-1)
                 else:
@@ -210,7 +212,7 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
     pickle.dump(data, file)
     file.close()
     with open(path+'/index.pickle', 'wb') as fp:
-        pickle.dump(lib_dict, fp)
+        pickle.dump(task_list, fp)
 
     print(f"FINISH collecting {'solving' if solving else 'failing'} dataset!")
 

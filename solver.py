@@ -194,6 +194,15 @@ if __name__ == "__main__":
                 dev_ids = []
             else:
                 test_ids = []
+            if "-inspect" in sys.argv:
+                inspect_ids = []
+                tmp_ids = list(dev_ids)+list(test_ids)
+                count = dict(zip([i[:5] for i in tmp_ids],[0 for _ in tmp_ids]))
+                for tid in tmp_ids:
+                    if count[tid[:5]] < 4:
+                        count[tid[:5]] += 1
+                        inspect_ids.append(tid)
+                print("inpsect ids:", inspect_ids)
 
             if "-get-all-data" in sys.argv:
                 solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, brute_search=True, shuffle=shuffle)
@@ -254,7 +263,7 @@ if __name__ == "__main__":
                     solver.inspect_combi(eval_setup, fold_id)
                 elif type == "pyramid":
                     print(model_path, eval_setup, fold_id, "|| loading data for generative testing...")
-                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, test=True)
+                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=1, shuffle=shuffle, test=True, test_tasks=inspect_ids, setup_name="inspect4per", batch_size = 100)
                     print(model_path, eval_setup, fold_id, "|| inspecting generative performance...")
                     solver.inspect_supervised(eval_setup, fold_id)
                     
