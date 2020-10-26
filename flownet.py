@@ -874,7 +874,7 @@ class FlownetSolver():
                 if self.dijkstra:
                     dm =  distance_maps[None,idx]
                     print_dms = T.stack((dm, dm, dm), dim =-1)
-                    vis_line = T.cat((vis_line, print_dms), dim=1)
+                    vis_line = T.cat((vis_line, print_dms.cpu()), dim=1)
                     text.append("dijkstra")
                 vis_batch(vis_line, f'result/flownet/solving/{self.path}/{self.run}/{name}', f"{task}", text = text, save=True, font_size=9)
                 vis_line = vis_batch(vis_line, f'result/flownet/solving/{self.path}/{self.run}/{name}', f"{task}", text = text, save=False, font_size=9)
@@ -1840,8 +1840,8 @@ class FlownetSolver():
                 opti.step()
                 log.append(loss.item())
 
-        with open(f'result/flownet/training/{self.path}/{self.run}/loss.txt') as fp:
-            fp.write(f"avg-loss {sum(log)/len(log)}") 
+        with open(f'result/flownet/training/{self.path}/{self.run}/loss.txt', "w") as fp:
+            fp.write(f"avg-loss {sum(log)/len(log)}\n") 
             fp.write(f"avg-ten-smallest-losses {sum(sorted(log)[:10])/10}") 
     
     def train_brute_search(self, train_mode='CONS', epochs=10):
@@ -2374,7 +2374,7 @@ class FlownetSolver():
 
                     if self.dijkstra:
                         print_dms = T.stack((dist_map, dist_map, dist_map), dim =-1)
-                        diff_batch = T.cat((diff_batch, print_dms), dim=1)
+                        diff_batch = T.cat((diff_batch, print_dms.cpu()), dim=1)
                         text.append("dijkstra")
                     vis_batch(self.cut_off(diff_batch.cpu()), f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}', f'poch_{epoch}_{i}_diff', text=text, rows=rows)
                     scene = T.stack((background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)
@@ -2434,9 +2434,9 @@ class FlownetSolver():
                         rpb = (pbr[j])[:,None]
                         tmp_pb = T.cat((lpb, rpb), dim=1)
                         vis_batch(tmp_pb, f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}', f'visual_{i}_{j}', rows=text_left, descr=text_right)
-                        
-        with open(f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}/loss.txt') as fp:
-            fp.write(f"avg-loss {sum(log)/len(log)}") 
+
+        with open(f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}/loss.txt', "w") as fp:
+            fp.write(f"avg-loss {sum(log)/len(log)}\n") 
             fp.write(f"avg-ten-smallest-losses {sum(sorted(log)[:10])/10}") 
 
     def inspect_brute_search(self, eval_setup, fold, train_mode='CONS', epochs=1):
