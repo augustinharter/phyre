@@ -522,7 +522,7 @@ class FullyConnected(nn.Module):
         return self.model(X.view(X.shape[0], -1)).view(-1, self.out_dim, self.wid, self.wid)
 
 class FlownetSolver():
-    def __init__(self, path:str, modeltype:str, width:int, eval_only=False, smart = False, run='', num_seeds=1, device="cuda", hidfac=1, dijkstra=False, viz=100):
+    def __init__(self, path:str, modeltype:str, width:int, scheduled= False, bs=32, eval_only=False, smart = False, run='', lr=3e-3, num_seeds=1, device="cuda", hidfac=1, dijkstra=False, viz=100):
         super().__init__()
         self.device = ("cuda" if T.cuda.is_available() else "cpu") if device=="cuda" else "cpu"
         print("device:",self.device)
@@ -539,6 +539,10 @@ class FlownetSolver():
         self.dijkstra = dijkstra
         self.viz = 100
         self.logger = dict()
+        self.lr = lr
+        self.gamma = 0.5
+        self.bs = bs
+        self.scheduled = scheduled
 
         pyramid = SmartPyramid if smart else Pyramid
 
@@ -767,6 +771,7 @@ class FlownetSolver():
         return (x-r<0) or (x+r>1) or (y-r<0) or (y+r>1) or (d>1) or (d<0) or overlap
 
     def generative_auccess(self, tasks, name, pure_noise=False):
+        print("TASKS:",tasks)
         sim = phyre.initialize_simulator(tasks, 'ball')
         all_initial_scenes = T.tensor([[cv2.resize((scene==channel).astype(float), (self.width,self.width)) for channel in range(2,7)] for scene in sim.initial_scenes]).float().flip(-2)
         eva = phyre.Evaluator(tasks)
@@ -1695,7 +1700,10 @@ class FlownetSolver():
             text = ['scene','scene\nprediction', 'confidence']
             vis_batch(self.cut_off(diff_batch.cpu()), f'result/flownet/solving/{self.path}/{self.run}', f'{task}_best_actions_diff', text=text)
 
-    def load_data(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[], brute_search=False, n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None, batch_size = 32):
+    def load_data(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[], brute_search=False, n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None, batch_size = 0):
+        if not batch_size:
+            batch_size = self.bs
+        
         fold_id = fold
         eval_setup = setup
         width = self.width
@@ -1714,17 +1722,17 @@ class FlownetSolver():
 
         if not test:
             self.train_dataloader, self.train_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n", 
-                size=(width,width), tasks=train_ids[:], batch_size=batchsize//2 if brute_search else batchsize, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
+                size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
         else:
             self.test_dataloader, self.test_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_test_{width}xy_{n_per_task}n", 
                 size=(width,width), tasks=test_ids, n_per_task=n_per_task, shuffle=False, proposal_dict=proposal_dict, dijkstra=self.dijkstra, batch_size = batch_size)
         if brute_search:
             if not test:
                 self.failed_dataloader, self.failed_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_train_{width}xy_{n_per_task}n", 
-                    size=(width,width), tasks=train_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
+                    size=(width,width), tasks=train_ids[:], solving=False, batch_size=batch_size//2,  n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
             else:
                 self.failed_test_dataloader, self.failed_test_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_test_{width}xy_{n_per_task}n", 
-                    size=(width,width), tasks=test_ids[:], solving=False, batch_size=batchsize//2,  n_per_task=n_per_task, shuffle=False, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
+                    size=(width,width), tasks=test_ids[:], solving=False, batch_size=batch_size//2,  n_per_task=n_per_task, shuffle=False, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
         os.makedirs(f'result/flownet/training/{self.path}', exist_ok=True)
         with open(f'result/flownet/training/{self.path}/namespace.txt', 'w') as handle:
             handle.write(f"{self.modeltype} {setup} {fold}")
@@ -1739,12 +1747,12 @@ class FlownetSolver():
         log = []
         self.logger["gen-train-loss"] = log
 
-
         opti = T.optim.Adam(chain(tar_net.parameters(recurse=True), 
                             act_net.parameters(recurse=True),
                             ext_net.parameters(recurse=True),
                             base_net.parameters(recurse=True)), 
-                        lr=3e-3)
+                        lr=self.lr)
+        sched = T.optim.lr_scheduler.StepLR(opti,1,gamma=self.gamma)
 
         for epoch in range(epochs):
             for i, (X,) in enumerate(data_loader):
@@ -1838,6 +1846,9 @@ class FlownetSolver():
                 loss.backward()
                 opti.step()
                 log.append(loss.item())
+            
+            if self.scheduled:
+                sched.step()
 
         with open(f'result/flownet/training/{self.path}/{self.run}/loss.txt', "w") as fp:
             fp.write(f"avg-loss {sum(log)/len(log)}\n") 
@@ -1859,7 +1870,9 @@ class FlownetSolver():
                             act_net.parameters(recurse=True),
                             ext_net.parameters(recurse=True),
                             base_net.parameters(recurse=True)), 
-                        lr=3e-3)
+                        lr=self.lr)
+        sched = T.optim.lr_scheduler.StepLR(opti,1,gamma=self.gamma)
+
 
         for epoch in range(epochs):
             percentage = []
@@ -1976,6 +1989,9 @@ class FlownetSolver():
                 opti.zero_grad()
                 loss.backward()
                 opti.step()
+            
+            if self.scheduled:
+                sched.step()
 
             print("epoch {epoch}: avg correct classified percentage:", sum(percentage)/len(percentage))
             complete_percentage.append(sum(percentage)/len(percentage))
@@ -1996,7 +2012,8 @@ class FlownetSolver():
         opti = T.optim.Adam(chain(sim_net.parameters(recurse=True), 
                             comb_net.parameters(recurse=True), 
                             success_net.parameters(recurse=True)), 
-                        lr=3e-3)
+                        lr=self.lr)
+        sched = T.optim.lr_scheduler.StepLR(opti,1,gamma=self.gamma)
 
         for epoch in range(epochs):
             for i, ((X,), (Z,)) in enumerate(zip(data_loader, fail_loader)):
@@ -2102,6 +2119,8 @@ class FlownetSolver():
                 loss.backward()
                 opti.step()
 
+            if self.scheduled:
+                sched.step()
         fp.close()
 
     def inspect_combi(self, train_mode='CONS', epochs=10):
@@ -2116,11 +2135,6 @@ class FlownetSolver():
         percentage = []
         precision = []
         recall = []
-
-        opti = T.optim.Adam(chain(sim_net.parameters(recurse=True), 
-                            comb_net.parameters(recurse=True), 
-                            success_net.parameters(recurse=True)), 
-                        lr=3e-3)
 
         for epoch in range(1):
             for i, ((X,), (Z,)) in enumerate(zip(data_loader, fail_loader)):
@@ -2225,11 +2239,6 @@ class FlownetSolver():
                 else:
                     loss = conf_loss + red_loss + green_loss + blue_loss + comb_loss
                 #print(epoch, i, loss.item(), end='\r')
-
-                # Backward Pass
-                opti.zero_grad()
-                loss.backward()
-                opti.step()
 
         accuracy = sum(percentage)/len(percentage)
         recall = sum(recall)/len(recall)
@@ -2714,8 +2723,8 @@ if __name__ == "__main__" and args.train:
                             act_net.parameters(recurse=True),
                             ext_net.parameters(recurse=True),
                             base_net.parameters(recurse=True)), 
-                        lr=3e-3)
-    discr_opti = T.optim.Adam(discr.parameters(), lr=3e-3)
+                        lr=self.lr)
+    discr_opti = T.optim.Adam(discr.parameters(), lr=self.lr)
 #%%
 def train1():
     for e in range(100):

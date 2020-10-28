@@ -171,6 +171,8 @@ if __name__ == "__main__":
     hidfac = float(sys.argv[sys.argv.index("--hidfac")+1]) if "--hidfac" in sys.argv else 1
     seeds = int(sys.argv[sys.argv.index("--seeds")+1]) if "--seeds" in sys.argv else 1
     foldstart = int(sys.argv[sys.argv.index("--foldstart")+1]) if "--foldstart" in sys.argv else 0
+    batchsize = int(sys.argv[sys.argv.index("--batchsize")+1]) if "--batchsize" in sys.argv else 32
+    lr = float(sys.argv[sys.argv.index("--lr")+1]) if "--lr" in sys.argv else 0.003
     print("Model path:", model_path)
     gt_paths = "-gt-paths" in sys.argv
     shuffle = not ('-noshuff' in sys.argv)
@@ -180,20 +182,24 @@ if __name__ == "__main__":
     no_scnd_stage = '-no-second-stage' in sys.argv
     dijkstra = '-dijkstra' in sys.argv
     final = '-final' in sys.argv
+    scheduled = '-scheduled' in sys.argv
+
 
     auccess = []
     auc_dict = dict()
     for eval_setup in ['ball_within_template', 'ball_cross_template']:
         auccess.append(eval_setup)
         for fold_id in range(foldstart+folds):
-            solver = FlownetSolver(model_path, type, width, smart=smart, run=run, num_seeds=seeds, device=device, hidfac=hidfac, dijkstra=dijkstra)
+            solver = FlownetSolver(model_path, type, width, bs=batchsize,
+                scheduled= scheduled, lr=lr, smart=smart, run=run, num_seeds=seeds, 
+                device=device, hidfac=hidfac, dijkstra=dijkstra)
 
             train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
             if final:
                 train_ids = train_ids + dev_ids
                 dev_ids = []
             else:
-                test_ids = []
+                test_ids = dev_ids
             if "-inspect" in sys.argv:
                 inspect_ids = []
                 tmp_ids = list(dev_ids)+list(test_ids)
