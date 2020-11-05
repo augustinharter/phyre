@@ -8,13 +8,14 @@ from IPython.display import clear_output
 from phyre_rolllout_collector import load_phyre_rollouts, collect_solving_dataset
 from cv2 import resize, imshow, waitKey
 import cv2
-from phyre_utils import draw_ball, grow_action_vector, vis_batch, make_mono_dataset, action_delta_generator, gifify
+from phyre_utils import draw_ball, grow_action_vector, vis_batch, make_mono_dataset, action_delta_generator, gifify, sample_action_vector
 from itertools import chain
 import argparse
 import os
 import random
 import phyre
 from dijkstra import find_distance_map_obj
+import logging as L
 #%%
 class SpatialConv(nn.Module):
     def __init__(self, conv, direction, inplace=True, trans=False):
@@ -395,7 +396,7 @@ class Discriminator(nn.Module):
         return self.model(X)
 
 class Pyramid(nn.Module):
-    def __init__(self, in_dim, chs, wid, hidfac):
+    def __init__(self, in_dim, chs, wid, hidfac, dropout=False, ks=4, stride=2, pad=1 , neck=1, altconv=False):
         super().__init__()
         """
         self.model = nn.Sequential(
@@ -421,14 +422,37 @@ class Pyramid(nn.Module):
             nn.Sigmoid()
         )
         """
-        
+        if altconv:
+            ks = 3
+            stride = 1
         folds = range(1, int(np.math.log2(wid)))
+        bottleneck = max(folds)
         acti = nn.ReLU
-        convs = [nn.Conv2d(int(2**(2+i)*hidfac), int(2**(3+i)*hidfac), 4, 2, 1) for i in folds]
-        encoder = [nn.Conv2d(in_dim, int(8*hidfac), 4, 2, 1), acti()] + [acti() if i%2 else convs[i//2] for i in range(2*len(folds))]
-        trans_convs = [nn.ConvTranspose2d(int(2**(3+i)*hidfac), int(2**(2+i)*hidfac), 4, 2, 1) for i in reversed(folds)]
-        decoder = [acti() if i%2 else trans_convs[i//2] for i in range(2*len(folds))] + [nn.ConvTranspose2d(int(8*hidfac), chs, 4, 2, 1), nn.Sigmoid()]
+        drop = lambda: nn.Dropout(0.3, inplace=True)
+        convs = [nn.Conv2d(int(2**(2+i)*hidfac), int(2**(3+i)*hidfac*(neck if i==bottleneck else 1)), ks, stride, pad) for i in folds]
+        encoder = [nn.Conv2d(in_dim, int(8*hidfac), ks, stride, pad), acti()] + [acti() if i%2 else convs[i//2] for i in range(2*len(folds))]
+        trans_convs = [nn.ConvTranspose2d(int(2**(3+i)*hidfac*(neck if i==bottleneck else 1)), int(2**(2+i)*hidfac), 4, 2, 1) for i in reversed(folds)]
+        decoder = [acti() if i%2 else trans_convs[i//2] for i in range(2*len(folds))] + [nn.ConvTranspose2d(int(8*hidfac), chs, ks, stride, pad), nn.Sigmoid()]
         modules = encoder+decoder
+        #add dropout:
+        if dropout:
+            tmp_mods = [] # add dropouts before each acti
+            for mod in modules:
+                tmp_mods.append(mod)
+                if type(mod) == type(acti()):
+                    tmp_mods.append(drop())
+            print(tmp_mods)
+            modules = tmp_mods
+
+        if altconv:
+            tmp_mods = [] # add dropouts before each acti
+            for mod in modules:
+                tmp_mods.append(mod)
+                if type(mod) == type(acti()):
+                    tmp_mods.append(nn.MaxPool2d(2,2))
+            print(tmp_mods)
+            modules = tmp_mods
+
         self.model = nn.Sequential(*modules)
         #print(self.model.state_dict().keys())
 
@@ -522,7 +546,9 @@ class FullyConnected(nn.Module):
         return self.model(X.view(X.shape[0], -1)).view(-1, self.out_dim, self.wid, self.wid)
 
 class FlownetSolver():
-    def __init__(self, path:str, modeltype:str, width:int, scheduled= False, bs=32, eval_only=False, smart = False, run='', lr=3e-3, num_seeds=1, device="cuda", hidfac=1, dijkstra=False, viz=100):
+    def __init__(self, path:str, modeltype:str, width:int, altconv=False, neck=1, dropout= False, train_mode='CONS', uniform=False, radmode="old",
+            scheduled= False, bs=32, eval_only=False, smart = False, run='', 
+            lr=3e-3, num_seeds=1, device="cuda", hidfac=1, dijkstra=False, viz=100):
         super().__init__()
         self.device = ("cuda" if T.cuda.is_available() else "cpu") if device=="cuda" else "cpu"
         print("device:",self.device)
@@ -532,6 +558,8 @@ class FlownetSolver():
         self.modeltype = modeltype
         self.discr = None
         self.r_fac = 1
+        self.uniform = uniform
+        self.radmode = radmode
         self.models = dict()
         self.num_seeds = num_seeds
         self.cache = phyre.get_default_100k_cache('ball')
@@ -543,6 +571,11 @@ class FlownetSolver():
         self.gamma = 0.5
         self.bs = bs
         self.scheduled = scheduled
+        self.dropout = dropout
+        self.train_mode = train_mode
+        ks = 4
+        stride = 2
+        pad = 1
 
         pyramid = SmartPyramid if smart else Pyramid
 
@@ -552,28 +585,43 @@ class FlownetSolver():
             self.models["act_net"] = FullyConnected(7, 1, width)
             self.models["ext_net"] = FullyConnected(7, 1, width)
         elif modeltype=="pyramid":
-            self.models["tar_net"] = pyramid(5+int(self.dijkstra), 1, width, hidfac)
-            self.models["base_net"] = pyramid(5, 1, width, hidfac)
-            self.models["act_net"] = pyramid(7, 1, width, hidfac)
-            self.models["ext_net"] = pyramid(7, 1, width, hidfac)
+            self.models["tar_net"] = pyramid(5+int(self.dijkstra), 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["base_net"] = pyramid(5, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["act_net"] = pyramid(7, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["ext_net"] = pyramid(7, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
         elif modeltype=="scnn":
             self.models["tar_net"] = FlowNet(5+int(self.dijkstra), 16, sequ=True, trans=False)
             self.models["base_net"] = FlowNet(5, 16, sequ=True, trans=False)
             self.models["act_net"] = FlowNet(7, 16, sequ=True, trans=False)
             self.models["ext_net"] = UpFlowNet(7, 16, sequ=True)
         elif modeltype=="brute":
-            self.models["tar_net"] = pyramid(8+int(self.dijkstra), 1, width, hidfac)
-            self.models["base_net"] = pyramid(6, 1, width, hidfac)
-            self.models["act_net"] = pyramid(7, 1, width, hidfac)
+            self.models["tar_net"] = pyramid(8+int(self.dijkstra), 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["base_net"] = pyramid(6, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["act_net"] = pyramid(7, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
             self.models["ext_net"] = Discriminator(9, width)
         elif modeltype=="combi":
-            self.models["tar_net"] = pyramid(5+int(self.dijkstra), 1, width, hidfac)
-            self.models["base_net"] = pyramid(5, 1, width, hidfac)
-            self.models["act_net"] = pyramid(7, 1, width, hidfac)
-            self.models["ext_net"] = pyramid(7, 1, width, hidfac)
-            self.models["sim_net"] = pyramid(6, 1, width, hidfac)
-            self.models["comb_net"] = pyramid(6, 3, width, hidfac)
+            self.models["tar_net"] = pyramid(5+int(self.dijkstra), 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["base_net"] = pyramid(5, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["act_net"] = pyramid(7, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["ext_net"] = pyramid(7, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["sim_net"] = pyramid(6, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["comb_net"] = pyramid(6, 3, width, hidfac, dropout, ks, stride, pad, neck, altconv)
             self.models["success_net"] = Discriminator(9, width)
+        elif modeltype=="direct":
+            self.models["ext_net"] = pyramid(5, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["tar_net"] = pyramid(1, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["base_net"] = pyramid(1, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["act_net"] = pyramid(1, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+        elif modeltype=="nobase":
+            self.models["tar_net"] = pyramid(5+int(self.dijkstra), 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["base_net"] = pyramid(1, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["act_net"] = pyramid(6, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["ext_net"] = pyramid(7, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+        elif modeltype=="withbase":
+            self.models["tar_net"] = pyramid(5+int(self.dijkstra), 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["base_net"] = pyramid(5, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["act_net"] = pyramid(7, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
+            self.models["ext_net"] = pyramid(8, 1, width, hidfac, dropout, ks, stride, pad, neck, altconv)
         else:
             print("ERROR modeltype not understood", modeltype)
 
@@ -770,15 +818,16 @@ class FlownetSolver():
 
         return (x-r<0) or (x+r>1) or (y-r<0) or (y+r>1) or (d>1) or (d<0) or overlap
 
-    def generative_auccess(self, tasks, name, pure_noise=False):
+    def generative_auccess(self, tasks, name, pure_noise=True):
         print("TASKS:",tasks)
+        modus = self.train_mode
         sim = phyre.initialize_simulator(tasks, 'ball')
         all_initial_scenes = T.tensor([[cv2.resize((scene==channel).astype(float), (self.width,self.width)) for channel in range(2,7)] for scene in sim.initial_scenes]).float().flip(-2)
         eva = phyre.Evaluator(tasks)
         cache = phyre.get_default_100k_cache('ball')
         cache_actions = cache.action_array
 
-        self.to_train()
+        self.to_eval()
         actions = np.zeros((len(tasks), 3))
         pipelines = []
         num_batches = 1+len(tasks)//64
@@ -803,13 +852,36 @@ class FlownetSolver():
 
             # FORWARD PASS
             with T.no_grad():
-                base_paths = self.models["base_net"](init_scenes)
-                if self.dijkstra:
-                    target_paths = self.models["tar_net"](T.cat((init_scenes, distance_maps), dim=1))
-                else:
-                    target_paths = self.models["tar_net"](init_scenes)
-                action_paths = self.models["act_net"](T.cat((init_scenes, target_paths, base_paths), dim=1))
-                action_balls = self.models["ext_net"](T.cat((init_scenes, target_paths, action_paths), dim=1))
+                if modus in ['GT', 'CONS', 'MIX', 'END', 'COMB']:
+                    if self.dijkstra:
+                        target_paths = self.models["tar_net"](T.cat((init_scenes, distance_maps), dim=1))
+                    else:
+                        target_paths = self.models["tar_net"](init_scenes)
+                    base_paths = self.models["base_net"](init_scenes)
+                    action_paths = self.models["act_net"](T.cat((init_scenes, target_paths, base_paths), dim=1))
+                    action_balls = self.models["ext_net"](T.cat((init_scenes, target_paths, action_paths), dim=1))
+                elif modus=='DIRECT':
+                    action_balls = self.models["ext_net"](init_scenes)
+                    empty = T.zeros_like(action_balls)
+                    base_paths, action_paths, target_paths = empty, empty, empty
+                elif modus=='NOBASE':
+                    if self.dijkstra:
+                        target_paths = self.models["tar_net"](T.cat((init_scenes, distance_maps), dim=1))
+                    else:
+                        target_paths = self.models["tar_net"](init_scenes)
+                        base_paths = T.zeros_like(target_paths)
+                        action_paths = self.models["act_net"](T.cat((init_scenes, target_paths), dim=1))
+                        action_balls = self.models["ext_net"](T.cat((init_scenes, target_paths, action_paths), dim=1))
+                elif modus=='WITHBASE':
+                    if self.dijkstra:
+                        target_paths = self.models["tar_net"](T.cat((init_scenes, distance_maps), dim=1))
+                    else:
+                        target_paths = self.models["tar_net"](init_scenes)
+                        base_paths = self.models["base_net"](init_scenes)
+                        action_paths = self.models["act_net"](T.cat((init_scenes, target_paths, base_paths), dim=1))
+                        action_balls = self.models["ext_net"](T.cat((init_scenes, base_paths, target_paths, action_paths), dim=1))
+
+
                 print_batch = T.cat((init_scenes, base_paths, target_paths, action_paths, action_balls), dim=1)
                 #text = ['green\nball GT', 'blue GT\ndynamic', 'blue GT\nstatic', 'grey', 'black', 'base\npred', 'target\npred', 'action\npred', 'a-ball\npred']
                 #vis_batch(print_batch, f'result/flownet/solver/{self.path}', f'{batch}', text=text)
@@ -824,12 +896,19 @@ class FlownetSolver():
                 #a = pic_to_action_vector(ball, r_fac=1.5)
                 mask = np.max(init_scenes[idx].cpu().numpy(), axis=0)
                 #print(mask.shape)
-                a  = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
-                a2 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
-                a3 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
-                a4 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
-                a5 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
+                if self.radmode=="old":
+                    a  = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
+                    a2 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
+                    a3 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
+                    a4 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
+                    a5 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
                 #print(a)
+                else:
+                    a  = sample_action_vector(ball, self.cache, uniform=self.uniform, radmode=self.radmode, mask=mask, check_border=True)
+                    a2 = sample_action_vector(ball, self.cache, uniform=self.uniform, radmode=self.radmode, mask=mask, check_border=True)
+                    a3 = sample_action_vector(ball, self.cache, uniform=self.uniform, radmode=self.radmode, mask=mask, check_border=True)
+                    a4 = sample_action_vector(ball, self.cache, uniform=self.uniform, radmode=self.radmode, mask=mask, check_border=True)
+                    a5 = sample_action_vector(ball, self.cache, uniform=self.uniform, radmode=self.radmode, mask=mask, check_border=True)
 
                 drawn = draw_ball(self.width, a[0],a[1],a[2], invert_y = True).to(self.device)
                 drawn2 = draw_ball(self.width, a2[0],a2[1],a2[2], invert_y = True).to(self.device)
@@ -1700,7 +1779,7 @@ class FlownetSolver():
             text = ['scene','scene\nprediction', 'confidence']
             vis_batch(self.cut_off(diff_batch.cpu()), f'result/flownet/solving/{self.path}/{self.run}', f'{task}_best_actions_diff', text=text)
 
-    def load_data(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[], brute_search=False, n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None, batch_size = 0):
+    def load_data(self, setup='ball_within_template', fold=0, train_tasks=[], test_tasks=[], pertempl=False, brute_search=False, n_per_task=1, shuffle=True, test=False, setup_name="all-tasks", proposal_dict=None, batch_size = 0):
         if not batch_size:
             batch_size = self.bs
         
@@ -1708,13 +1787,15 @@ class FlownetSolver():
         eval_setup = setup
         width = self.width
         dijkstra_str = "_dijkstra" if self.dijkstra else ""
+        pertempl_str = "_pertempl" if pertempl else ""
 
         if train_tasks or test_tasks:
             train_ids = train_tasks
             test_ids = test_tasks
+            setup_name = setup_name+dijkstra_str+pertempl_str
         else:
             setup_name = "within" if setup=='ball_within_template' else "cross"
-            setup_name = setup_name+dijkstra_str
+            setup_name = setup_name+dijkstra_str+pertempl_str
             if proposal_dict is not None:
                 setup_name = setup_name+"_proposals"
             train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
@@ -1722,22 +1803,22 @@ class FlownetSolver():
 
         if not test:
             self.train_dataloader, self.train_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_train_{width}xy_{n_per_task}n", 
-                size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
+                size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
         else:
             self.test_dataloader, self.test_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_test_{width}xy_{n_per_task}n", 
-                size=(width,width), tasks=test_ids, n_per_task=n_per_task, shuffle=False, proposal_dict=proposal_dict, dijkstra=self.dijkstra, batch_size = batch_size)
+                size=(width,width), tasks=test_ids, n_per_task=n_per_task, shuffle=False, proposal_dict=proposal_dict, dijkstra=self.dijkstra, batch_size = batch_size, pertempl=pertempl)
         if brute_search:
             if not test:
                 self.failed_dataloader, self.failed_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_train_{width}xy_{n_per_task}n", 
-                    size=(width,width), tasks=train_ids[:], solving=False, batch_size=batch_size//2,  n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
+                    size=(width,width), tasks=train_ids[:], solving=False, batch_size=batch_size//2,  n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
             else:
                 self.failed_test_dataloader, self.failed_test_index = make_mono_dataset(f"data/{setup_name}_fold_{fold_id}_failed_test_{width}xy_{n_per_task}n", 
-                    size=(width,width), tasks=test_ids[:], solving=False, batch_size=batch_size//2,  n_per_task=n_per_task, shuffle=False, proposal_dict=proposal_dict, dijkstra=self.dijkstra)
+                    size=(width,width), tasks=test_ids[:], solving=False, batch_size=batch_size//2,  n_per_task=n_per_task, shuffle=False, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
         os.makedirs(f'result/flownet/training/{self.path}', exist_ok=True)
         with open(f'result/flownet/training/{self.path}/namespace.txt', 'w') as handle:
             handle.write(f"{self.modeltype} {setup} {fold}")
 
-    def train_supervised(self, train_mode='CONS', epochs=10):
+    def train_supervised(self, train_mode='CONS', epochs=10, test_ids=[], setup=""):
         self.to_train()
         data_loader = self.train_dataloader
         tar_net = self.models["tar_net"]
@@ -1746,6 +1827,9 @@ class FlownetSolver():
         ext_net = self.models["ext_net"]
         log = []
         self.logger["gen-train-loss"] = log
+        solve_epochs = [1,2,5,10, 15, 20, 30]
+        os.makedirs(f'result/flownet/training/{self.path}/{self.run}', exist_ok=True)
+        auccess_file = open(f'result/flownet/training/{self.path}/{self.run}/{setup}-auccess.txt', "w")
 
         opti = T.optim.Adam(chain(tar_net.parameters(recurse=True), 
                             act_net.parameters(recurse=True),
@@ -1755,6 +1839,8 @@ class FlownetSolver():
         sched = T.optim.lr_scheduler.StepLR(opti,1,gamma=self.gamma)
 
         for epoch in range(epochs):
+            L.info(f"training epoch {epoch+1}...")
+
             for i, (X,) in enumerate(data_loader):
                 X = X.to(self.device)
                 # Prepare Data
@@ -1776,12 +1862,12 @@ class FlownetSolver():
                     modus = train_mode
 
                 # Forward Pass               
-                if self.dijkstra:
-                    target_pred = tar_net(T.cat((init_scenes, dist_map), dim=1))
-                else:
-                    target_pred = tar_net(init_scenes)
-
-                base_pred = base_net(init_scenes)
+                if modus in ['GT', 'COMB', 'CONS', 'END']:
+                    base_pred = base_net(init_scenes)
+                    if self.dijkstra:
+                        target_pred = tar_net(T.cat((init_scenes, dist_map), dim=1))
+                    else:
+                        target_pred = tar_net(init_scenes)
                 if modus=='GT':
                     action_pred = act_net(T.cat((init_scenes, target_paths[:,None], base_paths[:,None]), dim=1))
                     ball_pred = ext_net(T.cat((init_scenes, target_paths[:,None], action_paths[:,None]), dim=1))
@@ -1794,7 +1880,27 @@ class FlownetSolver():
                 elif modus=='END':
                     action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
                     ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
-                
+                elif modus=='DIRECT':
+                    ball_pred = ext_net(init_scenes)
+                    empty = T.zeros_like(ball_pred)
+                    base_pred, action_pred, target_pred = empty, empty, empty
+                elif modus=='NOBASE':
+                    if self.dijkstra:
+                        target_pred = self.models["tar_net"](T.cat((init_scenes, distance_maps), dim=1))
+                    else:
+                        target_pred = self.models["tar_net"](init_scenes)
+                    base_pred = T.zeros_like(target_pred)
+                    action_pred = self.models["act_net"](T.cat((init_scenes, target_pred.detach()), dim=1))
+                    ball_pred = self.models["ext_net"](T.cat((init_scenes, target_pred.detach(), action_pred.detach()), dim=1))
+                elif modus=='WITHBASE':
+                    if self.dijkstra:
+                        target_pred = self.models["tar_net"](T.cat((init_scenes, distance_maps), dim=1))
+                    else:
+                        target_pred = self.models["tar_net"](init_scenes)
+                    base_pred = self.models["base_net"](init_scenes)
+                    action_pred = self.models["act_net"](T.cat((init_scenes, target_pred.detach(), base_pred.detach()), dim=1))
+                    ball_pred = self.models["ext_net"](T.cat((init_scenes, base_pred.detach(), target_pred.detach(), action_pred.detach()), dim=1))
+
                 if not i%100: #VISUALIZATION
                     os.makedirs(f'result/flownet/training/{self.path}/{self.run}', exist_ok=True)
                     #print_batch = T.cat((X, base_pred, target_pred, action_pred, ball_pred), dim=1).detach()
@@ -1831,13 +1937,17 @@ class FlownetSolver():
                 #plt.show()
 
                 # Loss
-                tar_loss = F.binary_cross_entropy(target_pred, target_paths[:,None])
-                act_loss = F.binary_cross_entropy(action_pred, action_paths[:,None])
-                ball_loss = F.binary_cross_entropy(ball_pred, action_balls[:,None])
-                base_loss = F.binary_cross_entropy(base_pred, base_paths[:,None])
-                if modus=='END':
-                    loss = ball_loss
+                if modus=='END' or modus=='DIRECT':
+                    loss = F.binary_cross_entropy(ball_pred, action_balls[:,None])
+                    tar_loss = T.tensor(0)
+                    act_loss = T.tensor(0)
+                    ball_loss = loss
+                    base_loss = T.tensor(0)
                 else:
+                    tar_loss = F.binary_cross_entropy(target_pred, target_paths[:,None])
+                    act_loss = F.binary_cross_entropy(action_pred, action_paths[:,None])
+                    ball_loss = F.binary_cross_entropy(ball_pred, action_balls[:,None])
+                    base_loss = F.binary_cross_entropy(base_pred, base_paths[:,None])
                     loss = ball_loss + tar_loss + act_loss + base_loss
                 print(epoch, i, loss.item(), end='\r')
 
@@ -1845,16 +1955,31 @@ class FlownetSolver():
                 opti.zero_grad()
                 loss.backward()
                 opti.step()
-                log.append(loss.item())
+                log.append([loss.item(), base_loss.item(), tar_loss.item(), act_loss.item(), ball_loss.item()])
             
             if self.scheduled:
                 sched.step()
 
+            if ((epoch+1) in solve_epochs) and test_ids:
+                L.info(f"collecting auccess after epoch {epoch+1}...")
+                auccess = self.generative_auccess(test_ids, setup)
+                L.info(f"finish collecting auccess after epoch {epoch+1}: {auccess}")
+                auccess_file.write(f"epoch {epoch+1} {auccess}\n")
+
+        log = T.tensor(log)
         with open(f'result/flownet/training/{self.path}/{self.run}/loss.txt', "w") as fp:
-            fp.write(f"avg-loss {sum(log)/len(log)}\n") 
-            fp.write(f"avg-ten-smallest-losses {sum(sorted(log)[:10])/10}")
             for line in log:
                 fp.write(f"{line}\n") 
+
+        loss_labels = ['combined', 'base', 'target', 'act-path', 'act-ball']
+        for i in range(5):
+            plt.plot(log[:,i].view(-1,10).mean(dim=1), label=loss_labels[i])
+
+        plt.legend()
+        plt.title(f"{self.path}")
+        plt.savefig(f'result/flownet/training/{self.path}/{self.run}/loss_plot.png')
+        plt.close()
+        auccess_file.close()
     
     def train_brute_search(self, train_mode='CONS', epochs=10):
         self.to_train()
@@ -2250,7 +2375,7 @@ class FlownetSolver():
             fp.write(f"\naccuracy {accuracy}\nrecall {recall}\nprecision {precision}")
 
     def inspect_supervised(self, eval_setup, fold, train_mode='CONS', epochs=1, single_viz = False):
-        self.to_train()
+        self.to_eval()
         data_loader = self.test_dataloader
         print("batch size", data_loader.batch_size)
         index = self.test_index
@@ -2294,11 +2419,12 @@ class FlownetSolver():
                         modus = train_mode
 
                     # Forward Pass
-                    if self.dijkstra:
-                        target_pred = tar_net(T.cat((init_scenes, dist_map), dim=1))
-                    else:
-                        target_pred = tar_net(init_scenes)
-                    base_pred = base_net(init_scenes)
+                    if modus in ['GT', 'COMB', 'CONS', 'END']:
+                        if self.dijkstra:
+                            target_pred = tar_net(T.cat((init_scenes, dist_map), dim=1))
+                        else:
+                            target_pred = tar_net(init_scenes)
+                        base_pred = base_net(init_scenes)
                     if modus=='GT':
                         action_pred = act_net(T.cat((init_scenes, target_paths[:,None], base_paths[:,None]), dim=1))
                         ball_pred = ext_net(T.cat((init_scenes, target_paths[:,None], action_paths[:,None]), dim=1))
@@ -2311,17 +2437,26 @@ class FlownetSolver():
                     elif modus=='END':
                         action_pred = act_net(T.cat((init_scenes, target_pred, base_pred), dim=1))
                         ball_pred = ext_net(T.cat((init_scenes, target_pred, action_pred), dim=1))
-                    
-                    tar_loss = F.binary_cross_entropy(target_pred, target_paths[:,None])
-                    act_loss = F.binary_cross_entropy(action_pred, action_paths[:,None])
-                    ball_loss = F.binary_cross_entropy(ball_pred, action_balls[:,None])
-                    base_loss = F.binary_cross_entropy(base_pred, base_paths[:,None])
-                    if modus=='END':
-                        loss = ball_loss
-                    else:
-                        loss = ball_loss + tar_loss + act_loss + base_loss
-                    print(epoch, i, loss.item(), end='\r')
-                    log.append(loss.item())
+                    elif modus=='DIRECT':
+                        ball_pred = ext_net(init_scenes)
+                        empty = T.zeros_like(ball_pred)
+                        base_pred, action_pred, target_pred = empty, empty, empty
+                    elif modus=='NOBASE':
+                        if self.dijkstra:
+                            target_pred = self.models["tar_net"](T.cat((init_scenes, distance_maps), dim=1))
+                        else:
+                            target_pred = self.models["tar_net"](init_scenes)
+                        base_pred = T.zeros_like(target_pred)
+                        action_pred = self.models["act_net"](T.cat((init_scenes, target_pred), dim=1))
+                        ball_pred = self.models["ext_net"](T.cat((init_scenes, target_pred, action_pred), dim=1))
+                    elif modus=='WITHBASE':
+                        if self.dijkstra:
+                            target_pred = self.models["tar_net"](T.cat((init_scenes, distance_maps), dim=1))
+                        else:
+                            target_pred = self.models["tar_net"](init_scenes)
+                            base_pred = self.models["base_net"](init_scenes)
+                            action_pred = self.models["act_net"](T.cat((init_scenes, target_pred, base_pred), dim=1))
+                            ball_pred = self.models["ext_net"](T.cat((init_scenes, base_pred, target_pred, action_pred), dim=1))
 
                 # VISUALIZATION
                 if True or self.viz and not i%self.viz:
@@ -2367,12 +2502,13 @@ class FlownetSolver():
                     background = background/max(background.max(),1)
                     diff_batch = T.cat((
                         T.stack((background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
-                        0.5*T.stack((base_pred, base_paths[:,None], base_paths[:,None]+base_pred),dim=-1), 
-                        0.5*T.stack((target_pred, target_paths[:,None], target_paths[:,None]+target_pred),dim=-1), 
-                        0.5*T.stack((action_pred, action_paths[:,None], action_paths[:,None]+action_pred),dim=-1), 
+                        T.stack((base_pred, base_paths[:,None], 0.5*(base_paths[:,None]+base_pred)),dim=-1), 
+                        T.stack((target_pred, target_paths[:,None], 0.5*(target_paths[:,None]+target_pred)),dim=-1), 
+                        T.stack((action_pred, action_paths[:,None], 0.5*(action_paths[:,None]+action_pred)),dim=-1), 
                         T.stack((ball_pred, action_balls[:,None], T.zeros_like(ball_pred)),dim=-1),
                         T.stack((ball_pred+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1),
                         T.stack((drawings+ball_pred+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1),
+                        T.stack((ball_pred+background, target_pred+init_scenes[:,None,0]+background, action_pred+init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1),
                         #T.stack((drawings+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1), 
                         T.stack((action_balls[:,None]+background, init_scenes[:,None,0]+background, init_scenes[:,None,1]+init_scenes[:,None,2]+background),dim=-1)), 
                         dim=1).detach()
@@ -2382,7 +2518,7 @@ class FlownetSolver():
                     white[:,:,:,:,[0,2]] -= diff_batch[:,:,:,:,None,1].repeat(1,1,1,1,2)
                     white[:,:,:,:,[1,2]] -= diff_batch[:,:,:,:,None,0].repeat(1,1,1,1,2)
                     diff_batch = white
-                    text = ['initial\nscene', 'base paths\nGT: blue-green\npredict: purple', 'target paths\nGT: blue-green\npredict: purple', 'action paths\nGT: blue-green\npredict: purple', 'action balls\nGT: blue-green\npredict: purple', 'action ball\nprediction\nin scene', 'prediction\nand resulting\naction in scene', 'GT scene']
+                    text = ['initial\nscene', 'base paths\nGT: blue-green\npredict: purple', 'target paths\nGT: blue-green\npredict: purple', 'action paths\nGT: blue-green\npredict: purple', 'action balls\nGT: blue-green\npredict: purple', 'action ball\nprediction\nin scene', 'prediction\nand resulting\naction in scene','comb preds\naction path\nin blue', 'GT scene']
 
                     if self.dijkstra:
                         print_dms = T.stack((dist_map, dist_map, dist_map), dim =-1)
@@ -2450,12 +2586,6 @@ class FlownetSolver():
                             rpb = (pbr[j])[:,None]
                             tmp_pb = T.cat((lpb, rpb), dim=1)
                             vis_batch(tmp_pb, f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}', f'visual_{i}_{j}', rows=text_left, descr=text_right)
-
-        with open(f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}/loss.txt', "w") as fp:
-            fp.write(f"avg-loss {sum(log)/len(log)}\n") 
-            fp.write(f"avg-ten-smallest-losses {sum(sorted(log)[:10])/10}")
-            for line in log:
-                fp.write(f"{line}\n")
 
     def inspect_brute_search(self, eval_setup, fold, train_mode='CONS', epochs=1):
         self.to_train()
@@ -2600,13 +2730,15 @@ class FlownetSolver():
 
     def to_eval(self):
         for model in self.models:
-            self.models[model].eval()
-            self.models[model].cpu()
+            if self.models[model] is not None:
+                self.models[model].to(self.device)
+                self.models[model].eval()
+            #self.models[model].cpu()
     
     def to_train(self):
         for model in self.models:
-            if self.device=="cuda":
-                self.models[model].cuda()
+            if self.models[model] is not None:
+                self.models[model].to(self.device)
                 self.models[model].train()
 
     def load_models(self, setup="ball_within_template", fold=0, device='cpu', no_second_stage=False):

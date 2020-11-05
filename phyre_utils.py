@@ -45,7 +45,7 @@ def make_mono_dataset_old(path, size=(32,32), save=True, tasks=[], shuffle=True)
     dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), 32, shuffle=shuffle)
     return dataloader, index
 
-def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=True, n_per_task=1, shuffle=True, proposal_dict=None, dijkstra=False):
+def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=True, n_per_task=1, shuffle=True, proposal_dict=None, dijkstra=False, pertempl=False):
     if os.path.exists(path+"/data.pickle") and os.path.exists(path+"/index.pickle"):
         try:
             with gzip.open(path+'/data.pickle', 'rb') as fp:
@@ -61,7 +61,7 @@ def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=Tru
         print(f"Loaded dataset from {path} with shape:", X.shape)
     else:
         if tasks:
-            collect_solving_dataset(path, tasks, n_per_task=n_per_task, stride=5, size=size, solving=solving, proposal_dict=proposal_dict, dijkstra=dijkstra)
+            collect_solving_dataset(path, tasks, n_per_task=n_per_task, stride=5, size=size, solving=solving, proposal_dict=proposal_dict, dijkstra=dijkstra, pertempl=pertempl)
         with gzip.open(path+'/data.pickle', 'rb') as fp:
             data = pickle.load(fp)
         with open(path+'/index.pickle', 'rb') as fp:
@@ -87,6 +87,21 @@ def shrink_data(path):
                 print(f"error loading {folder}:\n{e}")
             finally:
                 print(folder, "finished")
+
+def compare_viz(paths, column):
+    tlist = []
+    beginning = "isy2020/phyre/result/flownet/inspect/VS-bottleneck/default/ball_within_template_fold_0/poch_0_0_diff.png"
+    for path in paths:
+        if type(path==tuple):
+            name = "isy2020/phyre/result/flownet/inspect/"+path[0]+path[1]+"/ball_within_template_fold_0/eval-viz-tensor.pt"
+        else:
+            name = "isy2020/phyre/result/flownet/inspect/"+path+"/default/ball_within_template_fold_0/eval-viz-tensor.pt"
+        tensor = T.load(name)
+        tlist.append(tensor[:,column])
+    T.stack(tlist, dim=1)
+    rows = [str(i/4) for i in range(100)]
+    vis_batch(tlist, "./", "viz_compare.png", rows = rows)
+    
 
 def vis_batch(batch, path, pic_id, text = [], rows=[], descr=[], save=True, font_size=11):
     #print(batch.shape)
@@ -507,8 +522,90 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=1, mask=None, check_b
     action[1] = action[1] if action[1]> 0 else  0
     action[1] = action[1] if action[1]<1- 0 else 1- 0
     if np.any(action!=compare_action):
-        print("something was out of bounce:", action, compare_action)
+        #print("something was out of bounce:", action, compare_action)
+        pass
     return action
+
+def sample_action_vector(pic, cache, uniform=False, radmode="random", show=False, mask=None, check_border=False):
+    #os.makedirs("result/flownet/solver/grower", exist_ok=True)
+    #plt.imsave(f"result/flownet/solver/grower/{id}.png", pic)
+    pic = pic*(pic>pic.mean())
+    wid = pic.shape[0]
+    #plt.imsave(f"result/flownet/solver/grower/{id}_thresh.png", pic)
+    if check_border:
+        mask[:,0] = 1
+        mask[:,-1] = 1
+        mask[0,:] = 1
+        mask[-1,:] = 1
+
+
+    shape = pic.shape
+    flat = pic.numpy().reshape(-1)
+    flat = flat/np.sum(flat)
+    indexes = np.where(flat)[0]
+    probs = flat[flat>0]
+    #print(probs, indexes)
+    
+    valid = False
+    while not valid:
+        # POS SAMPLING
+        if uniform:
+            flat_choice = np.random.choice(indexes)
+        else:
+            flat_choice = np.random.choice(indexes, p=probs)
+        flat_mask = flat * 0
+        flat_mask[flat_choice] = 1
+        reshaped = flat_mask.reshape(shape)
+        choice = np.where(reshaped)
+        #print(choice)
+        y, x = choice[0].item()/wid, choice[1].item()/wid
+
+        # RADIUS Selection
+        radii = cache.action_array[:,2]
+        if radmode=="random":
+            rad = np.random.choice(radii)
+            ball = draw_ball(wid, x, y, rad/8)>0
+            if mask[ball].sum():
+                continue
+            else:
+                valid = True
+        else:
+            rads = []
+            tries = 0
+            while len(rads)<10:
+                tries += 1
+                #print(tries)
+                valid = True
+                rad = np.random.choice(radii)
+                ball = draw_ball(wid, x, y, rad/8)>0
+                #print(ball)
+                if tries>50:
+                    print("tried 50 radii!")
+                    valid = False
+                    break
+
+                if mask[ball].sum():
+                    continue
+                if radmode=="mean":
+                    try:
+                        value = pic[ball].mean()
+                    except Exception as e:
+                        print("CONTINUING", e)
+                        continue
+                elif radmode=="median":
+                    try:
+                        value = pic[ball].median()
+                    except Exception as e:
+                        print("CONTINUING", e)
+                        continue
+                rads.append((rad, value))
+            
+            if valid:
+                rads.sort(key=lambda x: x[1])
+                rad = rads[-1][0]
+
+    #print(type(rad), rad)
+    return np.array([x,y,rad/8])
 
 def pic_hist_to_action(pic, r_fac=3):
     # thresholding
@@ -579,7 +676,6 @@ def extract_individual_auccess(path):
         fp.writelines([str(round(item, 2))[-3:]+' & ' for item in within]+['\n'])
         fp.writelines([str(round(item, 2))[-3:]+' & ' for item in cross]+['\n'])
         fp.write(f"average {sum(within)/len(within)} {sum(cross)/(len(cross)-1)}")
-
 
 def collect_traj_lookup(tasks, save_path, number_per_task, show=False, stride=10):
     end_char = '\n'
@@ -748,12 +844,116 @@ def add_dijkstra_to_data(path):
         grey = T.stack((X[:,4],X[:,4],X[:,4]), dim=-1)
         black = T.stack((X[:,5],X[:,0]*0,X[:,0]*0), dim=-1)
 
+def create_eval_overview(paths, wid = 64):
+    inspect = "result/flownet/inspect/"
+    train = "result/flownet/training/"
+    fold = 0
+    tasks_img = None
+    for setup in ['within', 'cross']:
+        comb_viz = []
+        names = []
+        aucc_names = []
+        res = []
+        losses = []
+        for path in paths:
+            base = inspect+path+"/default/"
+            mid = f"ball_{setup}_template_fold_{fold}/"
+            end = "eval-viz-tensor.pt"
+            
+            tstart = train+path+"/default/"
+            auccess = f"ball_{setup}_template_{fold}-auccess.txt"
+            loss_pic = f"loss_plot.png"
+            loss_txt = f"loss.txt"
+            
+            try:
+                #train:
+                tmp_res = np.loadtxt(tstart+auccess, usecols=2)
+                if tmp_res.shape[0] == 4:
+                    res.append(tmp_res)
+                    aucc_names.append(path)
+                else:
+                    continue
+                    print(res[-1].shape)
+
+                with open(tstart+loss_txt, "r") as fp:
+                    data = fp.readlines()
+                data = [[float(item) for item in (line.replace("tensor([", "").replace("])\n", "")).split(",")] for line in data]
+                log = np.array(data)
+                #print(log.shape)
+
+                loss_labels = ['combined', 'base', 'target', 'act-path', 'act-ball']
+                for i in range(5):
+                    plt.plot(np.mean(log[:,i].reshape(-1,10), axis=1), label=loss_labels[i])
+                plt.legend()
+                plt.title(aucc_names[-1])
+                plt.ylim(0,0.25)
+                plt.grid()
+                plt.savefig(tstart+loss_pic)
+                plt.close()
+                loss_plot = cv2.imread(tstart+loss_pic)
+
+                #print(loss_plot.shape)
+                losses.append(loss_plot)
+
+                #inspect:
+                viz = T.load(base+mid+end)
+                if tasks_img is None:
+                    pic = "poch_0_0_diff.png"
+                    img = cv2.imread(base+mid+pic)
+                    tasks_img = cv2.imread(base+mid+pic)[:,:40]
+                comb_viz.append(viz[:,7,None])
+                #print(base+mid+end, comb_viz[-1].shape)
+                names.append(path)
 
 
+            except Exception as e:
+                print(e)
+
+        # save auccess file:
+        np.savetxt(f"{setup}-aucces.csv", np.stack(res, axis=0).T, header=",".join(aucc_names), delimiter=",", fmt='%1.7f')
+
+        # save loss plots:
+        loss_plots = Image.fromarray(np.concatenate(losses, axis=1))
+        font = ImageFont.truetype("/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf", 20)
+        draw = ImageDraw.Draw(loss_plots)
+        for i,x in enumerate(range(0,loss_plots.width, int(loss_plots.width/len(names)))):
+            draw.text((10+x, 5), names[i], fill= (0,0,0), font=font)
+
+        loss_plots.save(f"{setup}-losses.png")
+
+
+        if False:
+            comb_viz = T.cat(comb_viz, dim=1)
+            viz = np.array(vis_batch(comb_viz, "./", f"{setup}-inspects", text=names, save=False))
+            height = viz.shape[0]
+            tasks_img = tasks_img[-height:]
+            final_viz = np.concatenate((tasks_img, viz), axis=1)
+            plt.imsave(f"{setup}-inspects.png", final_viz, dpi=1000)
+
+            
+            
 
 if __name__ == "__main__":
     #visualize_actions_from_cache(1000)
     #print(get_auccess_for_n_tries(10))
+    # Collecting trajectory lookup
+    if True:
+        pic = draw_ball(32,0.5,0.2,0.3) + draw_ball(32,0.5,0.5,0.1)
+        #print(grow_action_vector(pic, check_border=True, mask=draw_ball(32,0.5,0.5,0.1), show=True))
+        cache = phyre.get_default_100k_cache('ball')
+        print(sample_action_vector(pic, cache, radmode="random", check_border=True, mask=draw_ball(32,0.5,0.5,0.1)))
+        print(sample_action_vector(pic, cache, radmode="mean", check_border=True, mask=draw_ball(32,0.5,0.5,0.1)))
+        print(sample_action_vector(pic, cache, radmode="median", check_border=True, mask=draw_ball(32,0.5,0.5,0.1)))
+        print(sample_action_vector(pic, cache, uniform=True, radmode="random", check_border=True, mask=draw_ball(32,0.5,0.5,0.1)))
+        print(sample_action_vector(pic, cache, uniform=True, radmode="mean", check_border=True, mask=draw_ball(32,0.5,0.5,0.1)))
+        print(sample_action_vector(pic, cache, uniform=True, radmode="median", check_border=True, mask=draw_ball(32,0.5,0.5,0.1)))
+        exit()
+
+    paths = ['VS-base','VS-w128', 'VS-bs16', 'VS-bs64', 'VS-dijkstra', 'VS-direct', 
+        'VS-dropout', 'VS-lr01', 'VS-lr03', 'VS-lr3', 'VS-neck','VS-nobase','VS-nper32',
+        'VS-sched', 'VS-task-cons', 'VS-templ-cons', 'VS-withbase', 'VS-x2', 'VS-x4', 'VS-x05']
+    create_eval_overview(paths)
+    exit()
 
     shrink_data("./data")
     exit()
@@ -767,9 +967,6 @@ if __name__ == "__main__":
 
     make_visuals()
     exit()
-    # Collecting trajectory lookup
-    pic = draw_ball(32,0.5,0.2,0.3) + draw_ball(32,0.5,0.5,0.1)
-    print(grow_action_vector(pic, check_border=True, mask=draw_ball(32,0.5,0.5,0.1), show=True))
     #exit()
     fold_id = 0
     eval_setup = 'ball_within_template'

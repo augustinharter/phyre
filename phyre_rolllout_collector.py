@@ -108,7 +108,7 @@ def collect_solving_observations(path, tasks, n_per_task = 10, collect_base=True
 
     print("FINISH collecting rollouts!")
 
-def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, stride=10, size=(32,32), solving=True, proposal_dict=None, dijkstra=False):
+def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, stride=10, size=(32,32), solving=True, proposal_dict=None, dijkstra=True, pertempl=False):
     end_char = '\n'
     tries = 0
     max_tries = 510
@@ -116,6 +116,18 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
     number_to_solve = n_per_task
     cache = phyre.get_default_100k_cache('ball')
     actions = cache.action_array
+
+    print(pertempl)
+    if pertempl:
+        templates = set(t[:5] for t in tasks)
+        tmp = []
+        for templ in templates:
+            possible_tasks = [t for t in tasks if t.__contains__(templ)]
+            for _ in range(n_per_task):
+                tmp.append(random.choice(possible_tasks))
+        assert len(templates)*n_per_task == len(tmp)
+        tasks = tmp
+        number_to_solve = 1
 
     path_idxs = [1,2,0]
     channels = range(1,7)

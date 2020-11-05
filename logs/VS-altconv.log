@@ -1,0 +1,44 @@
+2020-11-04 11:55:29,512 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-04 11:55:33,779 INFO __main__ VS-altconv ball_within_template 0 || loading data for generative training...
+2020-11-04 11:56:49,252 INFO __main__ VS-altconv ball_within_template 0 || training 'generative' models...
+2020-11-04 11:56:51,211 INFO root training epoch 1...
+2020-11-04 11:56:51,384 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 259, in <module>
+    solver.train_supervised(epochs=epochs, train_mode=train_mode, test_ids = test_ids, setup=f'{eval_setup}_{fold_id}')
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1866, in train_supervised
+    action_pred = act_net(T.cat((init_scenes, target_pred.detach(), base_pred.detach()), dim=1))
+RuntimeError: Sizes of tensors must match except in dimension 2. Got 1 and 64 (The offending index is 0)
+2020-11-04 14:44:40,579 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-04 14:44:44,756 INFO __main__ VS-altconv ball_within_template 0 || loading data for generative training...
+2020-11-04 14:46:00,963 INFO __main__ VS-altconv ball_within_template 0 || training 'generative' models...
+2020-11-04 14:46:02,901 INFO root training epoch 1...
+2020-11-04 14:46:02,920 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 259, in <module>
+    solver.train_supervised(epochs=epochs, train_mode=train_mode, test_ids = test_ids, setup=f'{eval_setup}_{fold_id}')
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1866, in train_supervised
+    action_pred = act_net(T.cat((init_scenes, target_pred.detach(), base_pred.detach()), dim=1))
+RuntimeError: Sizes of tensors must match except in dimension 2. Got 1 and 64 (The offending index is 0)
+2020-11-04 18:44:01,057 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-04 18:44:05,524 INFO __main__ VS-altconv ball_within_template 0 || loading data for generative training...
+2020-11-04 18:45:20,442 INFO __main__ VS-altconv ball_within_template 0 || training 'generative' models...
+2020-11-04 18:45:22,305 INFO root training epoch 1...
+2020-11-04 18:45:22,325 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 259, in <module>
+    solver.train_supervised(epochs=epochs, train_mode=train_mode, test_ids = test_ids, setup=f'{eval_setup}_{fold_id}')
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1866, in train_supervised
+    action_pred = act_net(T.cat((init_scenes, target_pred.detach(), base_pred.detach()), dim=1))
+RuntimeError: Sizes of tensors must match except in dimension 2. Got 1 and 64 (The offending index is 0)
+2020-11-05 06:22:38,357 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-05 06:22:42,759 INFO __main__ VS-altconv ball_within_template 0 || loading data for generative training...
+2020-11-05 06:24:01,049 INFO __main__ VS-altconv ball_within_template 0 || training 'generative' models...
+2020-11-05 06:24:03,000 INFO root training epoch 1...
+2020-11-05 06:24:03,023 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 261, in <module>
+    solver.train_supervised(epochs=epochs, train_mode=train_mode, test_ids = test_ids, setup=f'{eval_setup}_{fold_id}')
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1875, in train_supervised
+    action_pred = act_net(T.cat((init_scenes, target_pred.detach(), base_pred.detach()), dim=1))
+RuntimeError: Sizes of tensors must match except in dimension 2. Got 1 and 64 (The offending index is 0)

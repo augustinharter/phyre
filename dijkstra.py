@@ -249,9 +249,11 @@ if __name__ == "__main__":
     # img = cv2.imread('maze.png')  # read image
     init_scene = sim.initial_scenes[0]
     img = phyre.observations_to_float_rgb(init_scene)  # read image
+    img = cv2.resize(img, (64,64))
     print(img)
     cv2.imwrite('00002_017_scene.png', img*255)
-    target = np.flip((init_scene == 4), axis=0)
+    target = np.flip((init_scene == 4), axis=0).astype(float)
+    target = cv2.resize(target, (64,64))
     # cv2.imwrite('maze-initial.png', img)
     distance_map = find_distance_map_obj(img, target)
     #distance_map[y-1, x] = 0.

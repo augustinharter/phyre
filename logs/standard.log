@@ -1,0 +1,19 @@
+2020-11-02 14:19:48,659 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-02 14:19:57,602 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-02 14:20:06,698 INFO __main__ ['ball_cross_template', 'ball_within_template']
+2020-11-02 14:24:26,123 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-02 14:24:34,891 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-02 14:24:44,154 INFO __main__ ['ball_cross_template', 'ball_within_template']
+2020-11-02 14:25:13,308 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-02 14:25:22,242 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 277, in <module>
+    L.info(model_path+" "+ eval_setup+" "+ fold_id+" "+ "|| loading data for generative testing...")
+TypeError: must be str, not int
+2020-11-02 14:26:33,015 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-02 14:26:41,939 INFO __main__ standard ball_cross_template 0 || loading data for generative testing...
+2020-11-02 14:26:42,580 INFO __main__ standard ball_cross_template 0 || inspecting generative performance...
+2020-11-02 14:26:51,978 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-02 14:27:00,931 INFO __main__ standard ball_within_template 0 || loading data for generative testing...
+2020-11-02 14:27:02,174 INFO __main__ standard ball_within_template 0 || inspecting generative performance...
+2020-11-02 14:27:12,680 INFO __main__ ['ball_cross_template', 'ball_within_template']
