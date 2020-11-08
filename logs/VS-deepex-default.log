@@ -1,0 +1,431 @@
+2020-11-08 13:32:24,150 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:32:25,716 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 207, in <module>
+    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 643, in __init__
+    self.models["deepex"] = Discriminator(6, self.wid, out_dim=3, inject = 100)
+AttributeError: 'FlownetSolver' object has no attribute 'wid'
+2020-11-08 13:32:30,874 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:32:32,314 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 207, in <module>
+    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 643, in __init__
+    self.models["deepex"] = Discriminator(6, self.wid, out_dim=3, inject = 100)
+AttributeError: 'FlownetSolver' object has no attribute 'wid'
+2020-11-08 13:32:37,230 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:32:38,705 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 207, in <module>
+    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 643, in __init__
+    self.models["deepex"] = Discriminator(6, self.wid, out_dim=3, inject = 100)
+AttributeError: 'FlownetSolver' object has no attribute 'wid'
+2020-11-08 13:32:43,142 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:32:44,472 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 207, in <module>
+    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 643, in __init__
+    self.models["deepex"] = Discriminator(6, self.wid, out_dim=3, inject = 100)
+AttributeError: 'FlownetSolver' object has no attribute 'wid'
+2020-11-08 13:32:48,818 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:32:50,333 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 207, in <module>
+    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 643, in __init__
+    self.models["deepex"] = Discriminator(6, self.wid, out_dim=3, inject = 100)
+AttributeError: 'FlownetSolver' object has no attribute 'wid'
+2020-11-08 13:32:55,050 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:32:56,392 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 207, in <module>
+    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 643, in __init__
+    self.models["deepex"] = Discriminator(6, self.wid, out_dim=3, inject = 100)
+AttributeError: 'FlownetSolver' object has no attribute 'wid'
+2020-11-08 13:33:00,776 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:33:02,362 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 207, in <module>
+    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 643, in __init__
+    self.models["deepex"] = Discriminator(6, self.wid, out_dim=3, inject = 100)
+AttributeError: 'FlownetSolver' object has no attribute 'wid'
+2020-11-08 13:33:06,690 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:33:08,075 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 207, in <module>
+    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 643, in __init__
+    self.models["deepex"] = Discriminator(6, self.wid, out_dim=3, inject = 100)
+AttributeError: 'FlownetSolver' object has no attribute 'wid'
+2020-11-08 13:33:13,194 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:33:14,543 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 207, in <module>
+    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 643, in __init__
+    self.models["deepex"] = Discriminator(6, self.wid, out_dim=3, inject = 100)
+AttributeError: 'FlownetSolver' object has no attribute 'wid'
+2020-11-08 13:33:18,995 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:33:20,350 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 207, in <module>
+    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 643, in __init__
+    self.models["deepex"] = Discriminator(6, self.wid, out_dim=3, inject = 100)
+AttributeError: 'FlownetSolver' object has no attribute 'wid'
+2020-11-08 13:52:24,404 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:52:28,756 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:52:31,830 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 71, in make_mono_dataset
+    train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+NameError: name 'setup' is not defined
+2020-11-08 13:52:36,539 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:52:40,817 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:52:43,850 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 71, in make_mono_dataset
+    train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+NameError: name 'setup' is not defined
+2020-11-08 13:52:48,630 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:52:52,963 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:52:55,959 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 71, in make_mono_dataset
+    train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+NameError: name 'setup' is not defined
+2020-11-08 13:53:00,342 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:53:04,694 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:53:07,789 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 71, in make_mono_dataset
+    train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+NameError: name 'setup' is not defined
+2020-11-08 13:53:12,401 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:53:16,987 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:53:20,150 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 71, in make_mono_dataset
+    train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+NameError: name 'setup' is not defined
+2020-11-08 13:53:25,468 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:53:29,929 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:53:32,993 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 71, in make_mono_dataset
+    train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+NameError: name 'setup' is not defined
+2020-11-08 13:53:37,430 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:53:41,834 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:53:44,887 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 71, in make_mono_dataset
+    train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+NameError: name 'setup' is not defined
+2020-11-08 13:53:49,730 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:53:54,328 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:53:57,605 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 71, in make_mono_dataset
+    train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+NameError: name 'setup' is not defined
+2020-11-08 13:54:01,947 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:54:06,330 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:54:09,429 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 71, in make_mono_dataset
+    train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+NameError: name 'setup' is not defined
+2020-11-08 13:54:13,852 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:54:18,401 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:54:21,421 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 71, in make_mono_dataset
+    train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+NameError: name 'setup' is not defined
+2020-11-08 13:56:20,206 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 13:56:24,811 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 13:56:31,450 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:03:33,124 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 85, in make_mono_dataset
+    selection = [index.index(task) for task in tasks]
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 85, in <listcomp>
+    selection = [index.index(task) for task in tasks]
+ValueError: '00024:440' is not in list
+2020-11-08 14:03:38,449 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:03:42,744 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:03:56,338 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 85, in make_mono_dataset
+    selection = [index.index(task) for task in tasks]
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 85, in <listcomp>
+    selection = [index.index(task) for task in tasks]
+ValueError: '00024:440' is not in list
+2020-11-08 14:04:00,613 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:04:04,838 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:04:18,615 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 85, in make_mono_dataset
+    selection = [index.index(task) for task in tasks]
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 85, in <listcomp>
+    selection = [index.index(task) for task in tasks]
+ValueError: '00024:440' is not in list
+2020-11-08 14:04:23,114 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:04:27,422 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:05:26,082 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:05:30,577 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:05:44,349 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 94, in make_mono_dataset
+    I = T.arange(len(X), dytpe=int)
+TypeError: arange() received an invalid combination of arguments - got (int, dytpe=type), but expected one of:
+ * (Number end, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (Number start, Number end, Number step, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+2020-11-08 14:05:48,820 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:05:53,439 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:06:06,953 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 94, in make_mono_dataset
+    I = T.arange(len(X), dytpe=int)
+TypeError: arange() received an invalid combination of arguments - got (int, dytpe=type), but expected one of:
+ * (Number end, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (Number start, Number end, Number step, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+2020-11-08 14:06:11,376 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:06:15,693 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:06:29,331 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 94, in make_mono_dataset
+    I = T.arange(len(X), dytpe=int)
+TypeError: arange() received an invalid combination of arguments - got (int, dytpe=type), but expected one of:
+ * (Number end, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (Number start, Number end, Number step, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+2020-11-08 14:06:34,652 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:06:39,016 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:06:52,742 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 94, in make_mono_dataset
+    I = T.arange(len(X), dytpe=int)
+TypeError: arange() received an invalid combination of arguments - got (int, dytpe=type), but expected one of:
+ * (Number end, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (Number start, Number end, Number step, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+2020-11-08 14:06:57,192 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:07:01,518 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:07:15,032 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 94, in make_mono_dataset
+    I = T.arange(len(X), dytpe=int)
+TypeError: arange() received an invalid combination of arguments - got (int, dytpe=type), but expected one of:
+ * (Number end, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (Number start, Number end, Number step, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+2020-11-08 14:07:19,493 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:07:23,847 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:07:37,823 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 94, in make_mono_dataset
+    I = T.arange(len(X), dytpe=int)
+TypeError: arange() received an invalid combination of arguments - got (int, dytpe=type), but expected one of:
+ * (Number end, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (Number start, Number end, Number step, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+2020-11-08 14:07:43,061 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:07:47,403 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:08:01,049 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 94, in make_mono_dataset
+    I = T.arange(len(X), dytpe=int)
+TypeError: arange() received an invalid combination of arguments - got (int, dytpe=type), but expected one of:
+ * (Number end, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (Number start, Number end, Number step, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+2020-11-08 14:08:05,519 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:08:09,919 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:08:23,730 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 94, in make_mono_dataset
+    I = T.arange(len(X), dytpe=int)
+TypeError: arange() received an invalid combination of arguments - got (int, dytpe=type), but expected one of:
+ * (Number end, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (Number start, Number end, Number step, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+2020-11-08 14:08:28,062 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:08:32,629 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:08:46,581 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 94, in make_mono_dataset
+    I = T.arange(len(X), dytpe=int)
+TypeError: arange() received an invalid combination of arguments - got (int, dytpe=type), but expected one of:
+ * (Number end, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (Number start, Number end, Number step, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+2020-11-08 14:08:51,936 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:08:56,752 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:09:10,618 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 262, in <module>
+    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1830, in load_data
+    size=(width,width), tasks=train_ids[:], batch_size=batch_size//2 if brute_search else batch_size, n_per_task=n_per_task, shuffle=shuffle, proposal_dict=proposal_dict, dijkstra=self.dijkstra, pertempl=pertempl)
+  File "/media/compute/homes/aharter/isy2020/phyre/phyre_utils.py", line 94, in make_mono_dataset
+    I = T.arange(len(X), dytpe=int)
+TypeError: arange() received an invalid combination of arguments - got (int, dytpe=type), but expected one of:
+ * (Number end, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+ * (Number start, Number end, Number step, *, Tensor out, torch.dtype dtype, torch.layout layout, torch.device device, bool pin_memory, bool requires_grad)
+
+2020-11-08 14:11:28,924 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:11:33,703 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:11:51,270 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:12:49,220 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:12:53,611 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:13:10,424 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:22:38,023 INFO __main__ VS-deepex ball_within_template 0 || training 'generative' models...
+2020-11-08 14:22:46,580 INFO root training epoch 1...
+2020-11-08 14:22:46,597 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 264, in <module>
+    solver.train_supervised(epochs=epochs, train_mode=train_mode, test_ids = test_ids, setup=f'{eval_setup}_{fold_id}')
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1949, in train_supervised
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/nn/modules/module.py", line 722, in _call_impl
+    result = self.forward(*input, **kwargs)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 400, in forward
+    enc = self.flat(self.encoder(X))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/nn/modules/module.py", line 772, in __getattr__
+    type(self).__name__, name))
+torch.nn.modules.module.ModuleAttributeError: 'Discriminator' object has no attribute 'encoder'
+2020-11-08 14:22:52,108 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:22:56,465 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:23:20,395 INFO __main__ VS-deepex ball_within_template 0 || training 'generative' models...
+2020-11-08 14:23:22,314 INFO root training epoch 1...
+2020-11-08 14:23:22,332 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 264, in <module>
+    solver.train_supervised(epochs=epochs, train_mode=train_mode, test_ids = test_ids, setup=f'{eval_setup}_{fold_id}')
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1951, in train_supervised
+    avec = self.models["deepex"](T.cat((init_scenes, ball_pred), dim=1))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/nn/modules/module.py", line 722, in _call_impl
+    result = self.forward(*input, **kwargs)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 400, in forward
+    enc = self.flat(self.encoder(X))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/nn/modules/module.py", line 772, in __getattr__
+    type(self).__name__, name))
+torch.nn.modules.module.ModuleAttributeError: 'Discriminator' object has no attribute 'encoder'
+2020-11-08 14:23:27,227 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:23:31,521 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:23:56,113 INFO __main__ VS-deepex ball_within_template 0 || training 'generative' models...
+2020-11-08 14:23:58,019 INFO root training epoch 1...
+2020-11-08 14:23:58,037 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 264, in <module>
+    solver.train_supervised(epochs=epochs, train_mode=train_mode, test_ids = test_ids, setup=f'{eval_setup}_{fold_id}')
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 1951, in train_supervised
+    avec = self.models["deepex"](T.cat((init_scenes, ball_pred), dim=1))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/nn/modules/module.py", line 722, in _call_impl
+    result = self.forward(*input, **kwargs)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 400, in forward
+    enc = self.flat(self.encoder(X))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/nn/modules/module.py", line 772, in __getattr__
+    type(self).__name__, name))
+torch.nn.modules.module.ModuleAttributeError: 'Discriminator' object has no attribute 'encoder'
+2020-11-08 14:24:03,485 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:24:07,806 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:25:55,845 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 14:26:00,557 INFO __main__ VS-deepex ball_within_template 0 || loading data for generative training...
+2020-11-08 14:26:06,602 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball

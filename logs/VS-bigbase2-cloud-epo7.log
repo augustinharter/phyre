@@ -1,0 +1,150 @@
+2020-11-07 03:55:58,046 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-07 03:56:06,039 INFO __main__ VS-bigbase2 ball_within_template 0 -1 || loading models...
+2020-11-07 03:56:06,044 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 231, in <module>
+    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2763, in load_models
+    self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 571, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 229, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 210, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'saves/flownet/VS-bigbase2_within_0_-1/tar_net.pt'
+2020-11-07 04:02:47,905 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-07 04:02:55,756 INFO __main__ VS-bigbase2 ball_within_template 0 -1 || loading models...
+2020-11-07 04:02:55,765 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 231, in <module>
+    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2763, in load_models
+    self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 571, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 229, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 210, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'saves/flownet/VS-bigbase2_within_0_-1/tar_net.pt'
+2020-11-07 04:09:29,689 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-07 04:09:37,806 INFO __main__ VS-bigbase2 ball_within_template 0 -1 || loading models...
+2020-11-07 04:09:37,808 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 231, in <module>
+    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2763, in load_models
+    self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 571, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 229, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 210, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'saves/flownet/VS-bigbase2_within_0_-1/tar_net.pt'
+2020-11-07 04:16:22,580 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-07 04:16:30,536 INFO __main__ VS-bigbase2 ball_within_template 0 -1 || loading models...
+2020-11-07 04:16:30,539 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 231, in <module>
+    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2763, in load_models
+    self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 571, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 229, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 210, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'saves/flownet/VS-bigbase2_within_0_-1/tar_net.pt'
+2020-11-07 04:23:15,311 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-07 04:23:23,236 INFO __main__ VS-bigbase2 ball_within_template 0 -1 || loading models...
+2020-11-07 04:23:23,238 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 231, in <module>
+    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2763, in load_models
+    self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 571, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 229, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 210, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'saves/flownet/VS-bigbase2_within_0_-1/tar_net.pt'
+2020-11-07 04:30:05,900 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-07 04:30:13,841 INFO __main__ VS-bigbase2 ball_within_template 0 -1 || loading models...
+2020-11-07 04:30:13,843 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 231, in <module>
+    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2763, in load_models
+    self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 571, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 229, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 210, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'saves/flownet/VS-bigbase2_within_0_-1/tar_net.pt'
+2020-11-07 04:36:53,825 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-07 04:37:01,947 INFO __main__ VS-bigbase2 ball_within_template 0 -1 || loading models...
+2020-11-07 04:37:01,949 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 231, in <module>
+    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2763, in load_models
+    self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 571, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 229, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 210, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'saves/flownet/VS-bigbase2_within_0_-1/tar_net.pt'
+2020-11-07 04:43:45,133 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-07 04:43:53,408 INFO __main__ VS-bigbase2 ball_within_template 0 -1 || loading models...
+2020-11-07 04:43:53,410 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 231, in <module>
+    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2763, in load_models
+    self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 571, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 229, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 210, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'saves/flownet/VS-bigbase2_within_0_-1/tar_net.pt'
+2020-11-07 04:50:36,701 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-07 04:50:44,833 INFO __main__ VS-bigbase2 ball_within_template 0 -1 || loading models...
+2020-11-07 04:50:44,835 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 231, in <module>
+    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2763, in load_models
+    self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 571, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 229, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 210, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'saves/flownet/VS-bigbase2_within_0_-1/tar_net.pt'
+2020-11-07 04:57:27,388 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-07 04:57:35,483 INFO __main__ VS-bigbase2 ball_within_template 0 -1 || loading models...
+2020-11-07 04:57:35,485 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 231, in <module>
+    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2763, in load_models
+    self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 571, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 229, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/media/compute/homes/aharter/miniconda3/envs/phyre/lib/python3.6/site-packages/torch/serialization.py", line 210, in __init__
+    super(_open_file, self).__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: 'saves/flownet/VS-bigbase2_within_0_-1/tar_net.pt'

@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import torch as T
 import torch.nn.functional as F
 from phyre_rolllout_collector import load_phyre_rollouts, collect_solving_observations, collect_solving_dataset
+from matplotlib import cm
+import matplotlib.colors as colors
 import cv2
 import phyre
 import os
@@ -11,6 +13,7 @@ import random
 import json
 import gzip
 from PIL import ImageDraw, Image, ImageFont
+import io
 
 
 def make_dual_dataset(path, size=(32,32), save=True):
@@ -49,28 +52,47 @@ def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=Tru
     if os.path.exists(path+"/data.pickle") and os.path.exists(path+"/index.pickle"):
         try:
             with gzip.open(path+'/data.pickle', 'rb') as fp:
-                data = pickle.load(fp)
-                X = T.tensor(data).float()
+                X, Y = pickle.load(fp)
+                X = T.tensor(X).float()
+                Y = T.tensor(Y).float()
         except OSError as e:
             print("WARNING still unzipped data file at", path)
             with open(path+'/data.pickle', 'rb') as fp:
-                data = pickle.load(fp)
-                X = T.tensor(data).float()
+                X, Y = pickle.load(fp)
+                X = T.tensor(X).float()
+                Y = T.tensor(Y).float()
         with open(path+'/index.pickle', 'rb') as fp:
             index = pickle.load(fp)
+        
+        # TRAIN TEST SPLIT
         print(f"Loaded dataset from {path} with shape:", X.shape)
     else:
-        if tasks:
-            collect_solving_dataset(path, tasks, n_per_task=n_per_task, stride=5, size=size, solving=solving, proposal_dict=proposal_dict, dijkstra=dijkstra, pertempl=pertempl)
+        if proposal_dict is None:
+            train_ids, dev_ids, test_ids = phyre.get_fold("ball_within_template", 0)
+            all_tasks = train_ids + dev_ids + test_ids
+        else:
+            all_tasks = tasks
+        collect_solving_dataset(path, all_tasks, n_per_task=n_per_task, stride=5, size=size, solving=solving, proposal_dict=proposal_dict, dijkstra=dijkstra, pertempl=pertempl)
         with gzip.open(path+'/data.pickle', 'rb') as fp:
-            data = pickle.load(fp)
+            X, Y = pickle.load(fp)
         with open(path+'/index.pickle', 'rb') as fp:
             index = pickle.load(fp)
-        X = T.tensor(data).float()
+        X = T.tensor(X).float()
+        Y = T.tensor(Y).float()
         print(f"Loaded dataset from {path} with shape:", X.shape)
+    
+    # MAKE CORRECT SELECTION
+    selection = [index.index(task) for task in tasks if task in index]
+    #print(len(index), len(tasks), len(selection))
+    X = X[selection]
+    Y = Y[selection]
+    index = [index[s] for s in selection]
+
+    assert len(X)==len(Y)==len(index), "All should be of equal length"
         
     X = X/255 # correct for uint8 encoding
-    dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X), batch_size, shuffle=shuffle)
+    I = T.arange(len(X), dtype=int)
+    dataloader = T.utils.data.DataLoader(T.utils.data.TensorDataset(X, Y, I), batch_size, shuffle=shuffle)
     return dataloader, index
 
 def shrink_data(path):
@@ -526,7 +548,7 @@ def grow_action_vector(pic, r_fac=1, show=False, num_seeds=1, mask=None, check_b
         pass
     return action
 
-def sample_action_vector(pic, cache, uniform=False, radmode="random", show=False, mask=None, check_border=False):
+def sample_action_vector(pic, actions, uniform=False, radmode="random", show=False, mask=None, check_border=False):
     #os.makedirs("result/flownet/solver/grower", exist_ok=True)
     #plt.imsave(f"result/flownet/solver/grower/{id}.png", pic)
     pic = pic*(pic>pic.mean())
@@ -561,7 +583,9 @@ def sample_action_vector(pic, cache, uniform=False, radmode="random", show=False
         y, x = choice[0].item()/wid, choice[1].item()/wid
 
         # RADIUS Selection
-        radii = cache.action_array[:,2]
+        radii = actions[:,2]
+        radii = radii[radii>0.005]
+
         if radmode=="random":
             rad = np.random.choice(radii)
             ball = draw_ball(wid, x, y, rad/8)>0
@@ -605,7 +629,50 @@ def sample_action_vector(pic, cache, uniform=False, radmode="random", show=False
                 rad = rads[-1][0]
 
     #print(type(rad), rad)
-    return np.array([x,y,rad/8])
+    return np.array([x,1-y,rad/8])
+
+def collect_actions():
+    train, dev, test = phyre.get_fold('ball_within_template', 0)
+    tasks = list(train + dev + test)
+    #print(len(tasks))
+    #bad = tasks.index("00024:440")
+    tasks.remove("00024:440")
+    sim = phyre.initialize_simulator(tasks, 'ball')
+    actions = []
+    cache = phyre.get_default_100k_cache('ball')
+    cached_actions = cache.action_array
+
+                
+    for ti, task in enumerate(tasks):
+        count = 0
+        solutions = cached_actions[cache.load_simulation_states(task)==1]
+        idxs = np.arange(len(solutions))
+        selection = np.random.choice(idxs, 10)
+        actions.extend(list(solutions[selection]))
+        #print(max(idxs), selection)
+        #print(list(solutions[selection]), task, len(solutions))
+
+        """
+        while True:
+            try:
+                action = random.choice(solutions)
+            except:
+                print("empty")
+                action = sim.sample(ti)
+            #res = sim.simulate_action(ti, action)
+            #print("collected", count, "actions for", task, end='\r')
+            #if res.status.is_solved():
+            actions.append(action)
+            count +=1
+            if count >=10:
+                break
+        """
+
+    actions = np.array(actions)
+    #print(actions.shape)
+    plt.hist(actions[:,2], bins=100)
+    plt.savefig("action-hist.png")
+    np.save("data/sample-actions.npy", actions)
 
 def pic_hist_to_action(pic, r_fac=3):
     # thresholding
@@ -930,14 +997,199 @@ def create_eval_overview(paths, wid = 64):
             final_viz = np.concatenate((tasks_img, viz), axis=1)
             plt.imsave(f"{setup}-inspects.png", final_viz, dpi=1000)
 
-            
-            
+def get_arr_from_fig(fig, dpi=300):
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches='tight')
+    buf.seek(0)
+    arr = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+    buf.close()
+    img = cv2.imdecode(arr, 1)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.resize(img, (256,256))
+    return img/255
 
 if __name__ == "__main__":
     #visualize_actions_from_cache(1000)
     #print(get_auccess_for_n_tries(10))
     # Collecting trajectory lookup
-    if True:
+    #collect_actions()
+    #exit()
+
+    cache = phyre.get_default_100k_cache('ball')
+    cactions = cache.action_array
+    for setup in ["ball_within_template", "ball_cross_template"]:
+        done = []
+        train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+        tasks = train_ids + dev_ids +test_ids
+        sim = phyre.initialize_simulator(tasks, 'ball')
+        for ti, task in enumerate(tasks):
+            #if task[:5] in done:
+            #    continue
+            #done.append(task[:5])
+            print(setup, task)
+            actions = cactions[cache.load_simulation_states(task)==1]
+            fig = plt.figure(figsize=(25,4))
+            #figs = []
+            fs = (10,10)
+
+            # INIT SCENE
+            ax = fig.add_subplot(161)
+            obs = phyre.observations_to_uint8_rgb(sim.initial_scenes[ti])
+            plt.imshow(obs)
+
+            # Overlay
+            ax = fig.add_subplot(162)
+            plt.imshow(obs)
+            ax.axes.set_xlabel("x")
+            ax.axes.set_ylabel("y")
+            #ax.axes.set_ylim(bottom=0, top=1) 
+            #ax.axes.set_xlim(left=0, right=1)
+            #print(actions[:2])
+            ax.set_aspect('equal')
+            ax.scatter(255*actions[:,0], 255-255*actions[:,1], s=1, c=actions[:,2], alpha=0.5)
+            cbaxes = fig.add_axes([1/3 +0.0355, 0.15, 0.005, 0.69]) 
+            cb = plt.colorbar(cm.ScalarMappable(norm=colors.Normalize(vmin=0, vmax=1), cmap=cm.jet), cax=cbaxes, shrink=0.5, ticks=[])
+            #cb = plt.colorbar(cm.ScalarMappable(norm=colors.Normalize(vmin=0, vmax=1), cmap=cm.jet), cax=cbaxes, shrink=0.5,  ticks=[0,0.2,0.4,0.6,0.8,1])
+            #plt.set_clim(0, 1)
+        
+
+            # From radius
+            ax = fig.add_subplot(163)
+            ax.axes.set_xlabel("x")
+            ax.axes.set_ylabel("y")
+            ax.set_aspect('equal')
+            ax.axes.set_ylim(bottom=0, top=1) 
+            ax.axes.set_xlim(left=0, right=1)
+            ax.scatter(actions[:,0], actions[:,1], s=1)
+
+            # From x
+            ax = fig.add_subplot(164)
+            ax.axes.set_xlabel("r")
+            ax.axes.set_ylabel("y")
+            ax.set_aspect('equal')
+            ax.axes.set_ylim(bottom=0, top=1) 
+            ax.axes.set_xlim(left=0, right=1)
+            ax.scatter(actions[:,2], actions[:,1], s=1)
+
+            # From y
+            ax = fig.add_subplot(165)
+            ax.axes.set_xlabel("x")
+            ax.axes.set_ylabel("r")
+            ax.set_aspect('equal')
+            ax.axes.set_ylim(bottom=0, top=1) 
+            ax.axes.set_xlim(left=0, right=1)
+            ax.scatter(actions[:,0], actions[:,2], s=1)
+            
+            # 3D
+            ax = fig.add_subplot(166, projection='3d')
+            #ax = fig.gca()
+            ax.axes.set_xlim3d(left=0, right=1) 
+            ax.axes.set_ylim3d(bottom=0, top=1) 
+            ax.axes.set_zlim3d(bottom=0, top=1)
+            ax.axes.set_xlabel("x")
+            ax.axes.set_ylabel("radius") 
+            ax.axes.set_zlabel("y")
+            #ax.set_aspect('equal')
+            ax.scatter(actions[:,0],  actions[:,2], actions[:,1], s=1)
+
+            #plt.tight_layout()
+            plt.savefig(f"actionspace/{setup}-{task}-space.png")
+            plt.close()
+    exit()
+
+    cache = phyre.get_default_100k_cache('ball')
+    cactions = cache.action_array
+    for setup in ["ball_within_template", "ball_cross_template"]:
+        done = []
+        train_ids, dev_ids, test_ids = phyre.get_fold(setup, 0)
+        tasks = train_ids + dev_ids +dev_ids
+        sim = phyre.initialize_simulator(tasks, 'ball')
+        for ti, task in enumerate(tasks):
+            #if task[:5] in done:
+            #    continue
+            #done.append(task[:5])
+            print(setup, task)
+            actions = cactions[cache.load_simulation_states(task)==1]
+            #fig = plt.figure(figsize=(1,1))
+            figs = []
+            fs = (10,10)
+
+            # INIT SCENE
+            fig = plt.figure(figsize=fs)
+            ax = fig.add_subplot(111)
+            obs = phyre.observations_to_uint8_rgb(sim.initial_scenes[ti])
+            plt.imshow(obs/255)
+            arr = get_arr_from_fig(fig)
+            figs.append(arr)
+
+            # 3D
+            fig = plt.figure(figsize=fs)
+            ax = fig.add_subplot(111, projection='3d')
+            #ax = fig.gca()
+            ax.axes.set_xlim3d(left=0, right=1) 
+            ax.axes.set_ylim3d(bottom=0, top=1) 
+            ax.axes.set_zlim3d(bottom=0, top=1)
+            ax.axes.set_xlabel("x")
+            ax.axes.set_ylabel("radius") 
+            ax.axes.set_zlabel("y")
+            ax.scatter(actions[:,0],  actions[:,2], actions[:,1], s=0.6)
+            arr = get_arr_from_fig(fig)
+            figs.append(arr)
+
+            # Overlay
+            fig = plt.figure(figsize=(fs[0], fs[1]*1.5))
+            ax = fig.add_subplot(111)
+            plt.imshow(obs)
+            ax.axes.set_xlabel("x")
+            ax.axes.set_ylabel("y")
+            #ax.axes.set_ylim(bottom=0, top=1) 
+            #ax.axes.set_xlim(left=0, right=1)
+            #print(actions[:2])
+            ax.scatter(1*actions[:,0], 1-1*actions[:,1], s=0.6, c=actions[:,2], alpha=0.5)
+            plt.colorbar(cm.ScalarMappable(norm=colors.NoNorm(), cmap=cm.jet), shrink=0.5,  ticks=[0,0.2,0.4,0.6,0.8,1])
+            #plt.set_clim(0, 1)
+            arr = get_arr_from_fig(fig)
+            figs.append(arr)
+            # From radius
+            fig = plt.figure(figsize=fs)
+            ax = fig.add_subplot(111)
+            ax.axes.set_xlabel("x")
+            ax.axes.set_ylabel("y")
+            ax.axes.set_ylim(bottom=0, top=1) 
+            ax.axes.set_xlim(left=0, right=1)
+            ax.scatter(actions[:,0], actions[:,1], s=0.6)
+            arr = get_arr_from_fig(fig)
+            figs.append(arr)
+
+            # From x
+            fig = plt.figure(figsize=fs)
+            ax = fig.add_subplot(111)
+            ax.axes.set_xlabel("r")
+            ax.axes.set_ylabel("y")
+            ax.axes.set_ylim(bottom=0, top=1) 
+            ax.axes.set_xlim(left=0, right=1)
+            ax.scatter(actions[:,2], actions[:,1], s=0.6)
+            arr = get_arr_from_fig(fig)
+            figs.append(arr)
+
+            # From y
+            fig = plt.figure(figsize=fs)
+            ax = fig.add_subplot(111)
+            ax.axes.set_xlabel("x")
+            ax.axes.set_ylabel("r")
+            ax.axes.set_ylim(bottom=0, top=1) 
+            ax.axes.set_xlim(left=0, right=1)
+            ax.scatter(actions[:,0], actions[:,2], s=0.6)
+            arr = get_arr_from_fig(fig)
+            figs.append(arr)
+            
+            #plt.tight_layout()
+            combined = np.concatenate(figs, axis=1)
+            plt.imsave(f"actionspace/{setup}-{task}-space.png", combined)
+            plt.close()
+    exit()
+
+    if False:
         pic = draw_ball(32,0.5,0.2,0.3) + draw_ball(32,0.5,0.5,0.1)
         #print(grow_action_vector(pic, check_border=True, mask=draw_ball(32,0.5,0.5,0.1), show=True))
         cache = phyre.get_default_100k_cache('ball')
@@ -949,11 +1201,12 @@ if __name__ == "__main__":
         print(sample_action_vector(pic, cache, uniform=True, radmode="median", check_border=True, mask=draw_ball(32,0.5,0.5,0.1)))
         exit()
 
-    paths = ['VS-base','VS-w128', 'VS-bs16', 'VS-bs64', 'VS-dijkstra', 'VS-direct', 
-        'VS-dropout', 'VS-lr01', 'VS-lr03', 'VS-lr3', 'VS-neck','VS-nobase','VS-nper32',
-        'VS-sched', 'VS-task-cons', 'VS-templ-cons', 'VS-withbase', 'VS-x2', 'VS-x4', 'VS-x05']
-    create_eval_overview(paths)
-    exit()
+    if False:
+        paths = ['VS-uni-rand','VS-uni-mean', 'VS-uni-median', 'VS-rad-rand','VS-rad-median','VS-rad-mean', 'VS-base','VS-w128', 'VS-bs16', 'VS-bs64', 'VS-dijkstra', 'VS-direct', 
+            'VS-dropout', 'VS-lr01', 'VS-lr03', 'VS-lr3', 'VS-neck','VS-nobase','VS-nper32',
+            'VS-sched', 'VS-task-cons', 'VS-templ-cons', 'VS-withbase', 'VS-x2', 'VS-x4', 'VS-x05']
+        create_eval_overview(paths)
+        exit()
 
     shrink_data("./data")
     exit()

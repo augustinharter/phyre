@@ -132,6 +132,7 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
     path_idxs = [1,2,0]
     channels = range(1,7)
     data = []
+    acts = []
     lib_dict = dict()
     task_list = []
 
@@ -159,6 +160,7 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
 
             # IF SOLVED PROCESS ROLLOUT
             if (res.status.is_solved() == solving) and not res.status.is_invalid():
+                acts.append(action)
                 tries = 0
                 solved += 1
                 
@@ -221,7 +223,7 @@ def collect_solving_dataset(path, tasks, n_per_task = 10, collect_base=True, str
     
     os.makedirs(path, exist_ok=True)
     file = gzip.GzipFile(path+'/data.pickle', 'wb')
-    pickle.dump(data, file)
+    pickle.dump((data, acts), file)
     file.close()
     with open(path+'/index.pickle', 'wb') as fp:
         pickle.dump(task_list, fp)

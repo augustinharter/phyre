@@ -17,3 +17,9 @@ TypeError: must be str, not int
 2020-11-02 14:27:00,931 INFO __main__ standard ball_within_template 0 || loading data for generative testing...
 2020-11-02 14:27:02,174 INFO __main__ standard ball_within_template 0 || inspecting generative performance...
 2020-11-02 14:27:12,680 INFO __main__ ['ball_cross_template', 'ball_within_template']
+2020-11-05 16:37:43,648 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-05 16:37:52,776 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-05 16:38:02,183 INFO __main__ ['ball_within_template', 'ball_cross_template']
+2020-11-05 17:23:00,635 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-05 17:23:09,025 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-05 17:23:17,568 INFO __main__ ['ball_within_template', 'ball_cross_template']

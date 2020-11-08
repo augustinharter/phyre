@@ -159,10 +159,10 @@ if __name__ == "__main__":
     try:
         from flownet import *
         model_path = sys.argv[sys.argv.index("--path")+1] if "--path" in sys.argv else "standard"
-        logging.basicConfig(filename=f'logs/{model_path}.log', format='%(asctime)s %(levelname)s %(name)s %(message)s', level=logging.INFO)
-        L = logging.getLogger(__name__)
         type = sys.argv[sys.argv.index("--type")+1] if "--type" in sys.argv else "pyramid"
         run = sys.argv[sys.argv.index("--run")+1] if "--run" in sys.argv else "default"
+        logging.basicConfig(filename=f'logs/{model_path}-{run}.log', format='%(asctime)s %(levelname)s %(name)s %(message)s', level=logging.INFO)
+        L = logging.getLogger(__name__)
         device = sys.argv[sys.argv.index("--device")+1] if "--device" in sys.argv else "cuda"
         pred_mode = sys.argv[sys.argv.index("--pred-mode")+1] if "--pred-mode" in sys.argv else "CONS"
         train_mode = sys.argv[sys.argv.index("--train-mode")+1] if "--train-mode" in sys.argv else "CONS"
@@ -173,6 +173,7 @@ if __name__ == "__main__":
         nper = int(sys.argv[sys.argv.index("--nper")+1]) if "--nper" in sys.argv else 10
         folds = int(sys.argv[sys.argv.index("--folds")+1]) if "--folds" in sys.argv else 1
         hidfac = float(sys.argv[sys.argv.index("--hidfac")+1]) if "--hidfac" in sys.argv else 1
+        load_from = int(sys.argv[sys.argv.index("--from")+1]) if "--from" in sys.argv else -1
         seeds = int(sys.argv[sys.argv.index("--seeds")+1]) if "--seeds" in sys.argv else 1
         foldstart = int(sys.argv[sys.argv.index("--foldstart")+1]) if "--foldstart" in sys.argv else 0
         batchsize = int(sys.argv[sys.argv.index("--batchsize")+1]) if "--batchsize" in sys.argv else 32
@@ -191,6 +192,8 @@ if __name__ == "__main__":
         altconv = '-altconv' in sys.argv
         pertempl = '-pertempl' in sys.argv
         uniform = '-uniform' in sys.argv
+        puretrain = '-puretrain' in sys.argv
+        deepex = '-deepex' in sys.argv
 
         auccess = []
         auc_dict = dict()
@@ -198,10 +201,10 @@ if __name__ == "__main__":
         for eval_setup in ['ball_within_template', 'ball_cross_template']:
             auccess.append(eval_setup)
             for fold_id in range(foldstart+folds):
-                solver = FlownetSolver(model_path, type, width, bs=batchsize, uniform=uniform, radmode=radmode,
+                solver = FlownetSolver(model_path, type, width, fold=fold_id, setup=eval_setup, bs=batchsize, uniform=uniform, radmode=radmode,
                     scheduled= scheduled, lr=lr, smart=smart, run=run, num_seeds=seeds, 
-                    device=device, hidfac=hidfac, dijkstra=dijkstra, dropout=dropout, 
-                    neck=neckfak, altconv=altconv, train_mode=train_mode)
+                    device=device, hidfac=hidfac, dijkstra=dijkstra, dropout=dropout, deepex=deepex, 
+                    neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
 
                 train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
                 train_ids = train_ids + dev_ids
@@ -225,8 +228,8 @@ if __name__ == "__main__":
                     solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=False, test=True)
 
                 if "-load" in sys.argv:
-                    L.info(model_path +" "+eval_setup+" "+str(fold_id)+" "+ "|| loading models...")
-                    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage)
+                    L.info(model_path +" "+eval_setup+" "+str(fold_id)+" "+str(load_from)+" "+ "|| loading models...")
+                    solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
 
                 if "-train" in sys.argv:
                     if type=="brute":
@@ -298,6 +301,7 @@ if __name__ == "__main__":
                             handle.write(f"auccess: {local_auccess}")
                         auccess.append(local_auccess)
                     else:
+                        #solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
                         local_auccess = solver.generative_auccess(test_ids, f'{eval_setup}_{fold_id}', pure_noise=noise)
                         #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                         os.makedirs(f'result/solver/result/{solver.path}/{run}', exist_ok=True)

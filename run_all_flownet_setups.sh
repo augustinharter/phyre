@@ -2,28 +2,47 @@
 
 #conda init bash
 #conda activate phyre
-for i in 0
+for i in 0 1 2 3 4 5 6 7 8 9
 do
-    if [ $1 = 'mix' ]
+    if [ $1 = 'bigbase' ]
     then
-        python solver.py --path VS-mix -train --folds 1 --foldstart $i -save -inspect --nper 100 --epochs 30 --lr 3e-3 --type withbase --train-mode WITHBASE
+        python solver.py --path VS-bigbase2 -train --folds 1 --foldstart $i -inspect --nper 32 --epochs 20 --lr 1e-3 --type withbase --train-mode WITHBASE -puretrain
+
+    fi
+
+    if [ $1 = 'deepex' ]
+    then
+        python solver.py --path VS-deepex -train --folds 1 --foldstart $i -inspect --nper 1 --epochs 20 --lr 1e-3 --type withbase --train-mode WITHBASE -puretrain -deepex
+
+    fi
+
+    if [ $1 = 'rads' ]
+    then
+        for i in 0 1 2 3 4 5 6 7 8 9
+        do
+            python solver.py --path VS-bigbase2 -load --from $i --run uni-epo$i --folds 1 --nper 32 --epochs 20 --lr 2e-3 --type withbase --train-mode WITHBASE -solve --radmode random -uniform
+            python solver.py --path VS-bigbase2 -load --from $i --run cloud-epo$i --folds 1 --nper 32 --epochs 20 --lr 2e-3 --type withbase --train-mode WITHBASE -solve --radmode random
+            python solver.py --path VS-bigbase2 -load --from $i --run grow-epo$i --folds 1 --nper 32 --epochs 20 --lr 2e-3 --type withbase --train-mode WITHBASE -solve --radmode old
+        done
+
+
 
     fi
 
     if [ $1 = 'rad1' ]
     then
         echo "rad one"
-        python solver.py --path VS-uni-mean -train -save -inspect --radmode mean -uniformform
-        python solver.py --path VS-uni-median -train -save -inspect --radmode median -uniformform
-        python solver.py --path VS-uni-rand -train -save -inspect --radmode random -formform
+        python solver.py --path VS-s-uni-mean -train -save -inspect --radmode mean -uniformform
+        python solver.py --path VS-s-uni-median -train -save -inspect --radmode median -uniformform
+        python solver.py --path VS-s-uni-rand -train -save -inspect --radmode random -formform
     fi
 
     if [ $1 = 'rad2' ]
     then
         echo "rad two"
-        python solver.py --path VS-rad-mean -train -save -inspect --radmode mean
-        python solver.py --path VS-rad-median -train -save -inspect --radmode median
-        python solver.py --path VS-rad-rand -train -save -inspect --radmode random
+        python solver.py --path VS-s-rad-mean -train -save -inspect --radmode mean
+        python solver.py --path VS-s-rad-median -train -save -inspect --radmode median
+        python solver.py --path VS-s-rad-rand -train -save -inspect --radmode random
     fi
 
     if [ $1 = 'one' ]
