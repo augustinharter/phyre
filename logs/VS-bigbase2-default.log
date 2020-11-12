@@ -321,3 +321,24 @@ AttributeError: 'FlownetSolver' object has no attribute 'purtrain'
 2020-11-08 02:23:51,591 INFO __main__ VS-bigbase2 ball_cross_template 2 || loading data for generative testing...
 2020-11-08 02:23:51,838 INFO __main__ VS-bigbase2 ball_cross_template 2 || inspecting generative performance...
 2020-11-08 02:23:54,590 INFO __main__ ['ball_within_template', 'ball_cross_template']
+2020-11-08 15:48:20,527 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 15:48:24,818 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 15:48:29,081 INFO __main__ ['ball_within_template', 'ball_cross_template']
+2020-11-08 15:48:34,115 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 15:49:54,702 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 15:49:58,986 INFO __main__ VS-bigbase2 ball_within_template 0 || loading data for generative training...
+2020-11-08 15:50:05,163 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 22:32:16,318 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-08 22:32:20,851 INFO __main__ VS-bigbase2 ball_within_template 0 || loading data for generative training...
+2020-11-08 22:32:27,175 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-09 05:56:12,162 INFO __main__ VS-bigbase2 ball_within_template 0 || training 'generative' models...
+2020-11-09 05:56:15,627 ERROR __main__ Exception occured:
+Traceback (most recent call last):
+  File "solver.py", line 266, in <module>
+    solver.train_supervised(epochs=epochs, train_mode=train_mode, test_ids = test_ids, setup=f'{eval_setup}_{fold_id}')
+  File "/media/compute/homes/aharter/isy2020/phyre/flownet.py", line 2028, in train_supervised
+    plt.plot(log[:-(len(log)%10),i].view(-1,10).mean(dim=1), label=loss_labels[i])
+IndexError: too many indices for tensor of dimension 1
+2020-11-09 05:56:29,471 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball
+2020-11-09 05:56:38,341 INFO __main__ VS-bigbase2 ball_within_template 0 || loading data for generative training...
+2020-11-09 05:56:50,926 INFO root Loading cache from /media/compute/homes/aharter/.cache/phyre/offline_simulation/100000/ball

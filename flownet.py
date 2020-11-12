@@ -16,6 +16,8 @@ import random
 import phyre
 from dijkstra import find_distance_map_obj
 import logging as L
+import pickle
+import json
 #%%
 class SpatialConv(nn.Module):
     def __init__(self, conv, direction, inplace=True, trans=False):
@@ -396,10 +398,11 @@ class Discriminator(nn.Module):
         self.reason =  nn.Sequential(*reason)
 
     
-    def forward(self, X, inj=None):
-        enc = self.flat(self.enc(X))
+    def forward(self, X, inject=None):
+        enc = self.enc(X)
+        enc = self.flat(enc)
         if self.inject:
-            enc = T.concatenate((enc, inj), dim=1)
+            enc = T.cat((enc, inject), dim=1)
         return self.reason(enc)
 
 
@@ -555,7 +558,7 @@ class FullyConnected(nn.Module):
 
 class FlownetSolver():
     def __init__(self, path:str, modeltype:str, width:int, altconv=False, neck=1, dropout= False, train_mode='CONS', uniform=False, radmode="old", setup="ball_within_template", fold=0,
-            scheduled= False, bs=32, eval_only=False, smart = False, run='', deepex=False,
+            scheduled= False, bs=32, eval_only=False, smart = False, run='', deepex=False, directex=False, epochstart=0,
             lr=3e-3, num_seeds=1, device="cuda", hidfac=1, dijkstra=False, viz=100, puretrain=False):
         super().__init__()
         self.device = ("cuda" if T.cuda.is_available() else "cpu") if device=="cuda" else "cpu"
@@ -563,6 +566,7 @@ class FlownetSolver():
         self.path = path
         self.deepex = deepex
         self.run = run
+        self.bpbank = []
         self.puretrain = puretrain
         self.setup = setup
         self.fold = fold
@@ -582,14 +586,17 @@ class FlownetSolver():
         self.viz = 100
         self.logger = dict()
         self.lr = lr
+        self.load_from = 0
         self.gamma = 0.5
         self.bs = bs
         self.scheduled = scheduled
         self.dropout = dropout
         self.train_mode = train_mode
+        self.directex = directex
         ks = 4
         stride = 2
         pad = 1
+        self.solve_dict = dict()
 
         pyramid = SmartPyramid if smart else Pyramid
 
@@ -640,8 +647,8 @@ class FlownetSolver():
             print("ERROR modeltype not understood", modeltype)
 
         if self.deepex:
-            self.models["deepex"] = Discriminator(6, self.width, out_dim=3, inject = 100)
-            self.models["disc"] = Discriminator(6, self.width, out_dim=1, inject=3)
+            self.models["deepex"] = Discriminator(6-self.directex, self.width, out_dim=3, inject = 100)
+            self.models["disc"] = Discriminator(6-self.directex, self.width, out_dim=1, inject=3)
 
         print("succesfully initialized models")
     
@@ -849,6 +856,7 @@ class FlownetSolver():
         actions = np.zeros((len(tasks), 3))
         pipelines = []
         num_batches = 1+len(tasks)//64
+        self.solve_dict[name] = dict()
 
         if self.dijkstra:
             all_distance_maps = T.zeros(len(tasks), 1, self.width,self.width)
@@ -922,11 +930,11 @@ class FlownetSolver():
                     a5 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
                 #print(a)
                 elif self.deepex:
-                    a  = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
-                    a2 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
-                    a3 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
-                    a4 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
-                    a5 = grow_action_vector(ball, r_fac =self.r_fac, num_seeds = self.num_seeds, check_border=True, mask=mask, updates=5)
+                    noise_dim =  self.models["deepex"].inject
+                    if self.directex:
+                        avec1 = self.models["deepex"](init_scenes[idx,None], inject = T.randn(1, noise_dim, device=self.device))
+                    else:
+                        avec1 = self.models["deepex"](T.cat((init_scenes[idx,None], action_balls[idx, None,0,None]), dim=1), inject = T.randn(1, noise_dim, device=self.device))
                 else:
                     a  = sample_action_vector(ball, self.sample_actions, uniform=self.uniform, radmode=self.radmode, mask=mask, check_border=True)
                     a2 = sample_action_vector(ball, self.sample_actions, uniform=self.uniform, radmode=self.radmode, mask=mask, check_border=True)
@@ -1032,7 +1040,7 @@ class FlownetSolver():
                     
                     # Check if SOLVED
                     if res.status.is_solved():
-
+                        self.solve_dict[name][task] = eva.attempts_per_task_index[task_idx]
                         # GIFIFY
                         for i in range(min(len(res.images), 10)):
                             gif_stack[vis_max_count,i] = T.tensor(cv2.resize(phyre.observations_to_uint8_rgb(res.images[i]), (vis_wid,vis_wid)))
@@ -1099,7 +1107,17 @@ class FlownetSolver():
                         break
 
         #print(list(zip(tasks,actions)))
-        return eva.get_auccess()
+        metrics = eva.compute_all_metrics()
+        ind_auccess = metrics['independent_solved_by_aucs'][-1]
+        auccess = eva.get_auccess()
+        after_ten = metrics['independent_solved_by'][9]
+        L.info(f"auccess: {auccess}, percentage solved after 10 attempts: {after_ten}")
+
+        os.makedirs(f'result/flownet/result/{self.path}/{self.run}/T', exist_ok=True)
+        with open(f'result/flownet/result/{self.path}/{self.run}/e{self.load_from}-solve-dict.json', 'w') as fp:
+            json.dump(self.solve_dict, fp)
+
+        return auccess, after_ten
 
     def combi_auccess(self, tasks, name, pure_noise=False, gt_paths=False, return_proposals=False):
         sim = phyre.initialize_simulator(tasks, 'ball')
@@ -1440,7 +1458,7 @@ class FlownetSolver():
         act_net = self.models["act_net"]
         ext_net = self.models["ext_net"]
 
-        for epoch in range(epochs):
+        for epoch in range(self.epochstart, epochs):
             for i, (X,) in enumerate(data_loader):
                 X = X.to(self.device)
                 # Prepare Data
@@ -1832,7 +1850,7 @@ class FlownetSolver():
         else:
             self.test_dataloader, self.test_index = make_mono_dataset(f"data/all_tasks_test_{width}xy_{n_per_task}n", 
                 size=(width,width), tasks=test_ids, n_per_task=n_per_task, shuffle=False, proposal_dict=proposal_dict, dijkstra=self.dijkstra, batch_size = batch_size, pertempl=pertempl)
-        if brute_search or self.deepex:
+        if brute_search:
             print("fail data")
             if not test:
                 self.failed_dataloader, self.failed_index = make_mono_dataset(f"data/all_tasks_failed_train_{width}xy_{n_per_task}n", 
@@ -1848,9 +1866,8 @@ class FlownetSolver():
         self.to_train()
         data_loader = self.train_dataloader
 
-        if self.deepex:
-            data_loader = zip(data_loader, self.failed_dataloader)
-            noise_dim = self.models["deepex"].inject
+        if len(self.bpbank) != len(self.train_index):
+            self.bpbank = T.zeros(len(self.train_index), 1, self.width, self.width)
 
         tar_net = self.models["tar_net"]
         base_net = self.models["base_net"]
@@ -1867,11 +1884,6 @@ class FlownetSolver():
                             ext_net.parameters(recurse=True),
                             base_net.parameters(recurse=True)), 
                         lr=self.lr)
-        if self.deepex:
-            gen_opt =  T.optim.Adam(self.models["deepex"].parameters(),
-                        lr=self.lr)
-            disc_opt =  T.optim.Adam(self.models["disc"].parameters(),
-                        lr=self.lr)
 
         sched = T.optim.lr_scheduler.StepLR(opti,1,gamma=self.gamma)
 
@@ -1879,11 +1891,7 @@ class FlownetSolver():
             L.info(f"training epoch {epoch+1}...")
 
             for i, B in enumerate(data_loader):
-                if self.deepex:
-                    (X,XY,XI), (Z, ZY, ZI) = B
-                    Z.to(self.device)
-                else:
-                    (X, XY, XI) = B
+                (X, XY, XI) = B
                 X = X.to(self.device)
                 # Prepare Data
                 action_balls = X[:,0]
@@ -1942,36 +1950,9 @@ class FlownetSolver():
                     base_pred = self.models["base_net"](init_scenes)
                     action_pred = self.models["act_net"](T.cat((init_scenes, target_pred.detach(), base_pred.detach()), dim=1))
                     ball_pred = self.models["ext_net"](T.cat((init_scenes, base_pred.detach(), target_pred.detach(), action_pred.detach()), dim=1))
-
-                if self.deepex:
-                    fail_inits, fail_avs = Z[:,1:6], ZY
-                    solve_avs = XY
-
-                    #GEN:
-                    avec = self.models["deepex"](T.cat((init_scenes, ball_pred), dim=1))
-                    #balls = []
-                    #for a in avec:
-                    #    balls.append(draw_ball(self.width, a[0],a[1],a[2], invert_y = True))
-                    #balls = T.stack(balls, dim=0).to(self.device)
-                    fake_val = self.models["disc"](init_scenes, inject = T.randn(len(X), noise_dim))
-                    gen_loss = F.binary_cross_entropy(fake_vals, T.ones_like(fake_val))
-                    fake_val = self.models["disc"](fail_inits, inject = T.randn(len(Z), noise_dim))
-                    gen_loss = gen_loss + F.binary_cross_entropy(fake_vals, T.ones_like(fake_val))
-
-                    #DISC:
-                    pos_val = self.models["disc"](init_scenes, inject=solve_avs)
-                    neg_val = self.models["disc"](fail_inits, inject=fail_avs)
-                    pos_loss = F.binary_cross_entropy(pos_vals, T.ones_like(pos_vals))
-                    neg_loss = F.binary_cross_entropy(neg_vals, T.zeros_like(neg_vals))
-                    gen_opt.zero_grad()
-                    disc_opt.zero_grad()
-                    (pos_loss+neg_loss).backward()
-                    gen_loss.backward()
-                    gen_opt.step()
-                    disc_opt.step()
-
-
-
+                
+                # SAVE BALL PRED IN BPBANK:
+                self.bpbank[XI] = ball_pred.detach().cpu()
 
                 if not i%100: #VISUALIZATION
                     os.makedirs(f'result/flownet/training/{self.path}/{self.run}', exist_ok=True)
@@ -2021,20 +2002,15 @@ class FlownetSolver():
                     ball_loss = F.binary_cross_entropy(ball_pred, action_balls[:,None])
                     base_loss = F.binary_cross_entropy(base_pred, base_paths[:,None])
                     loss = ball_loss + tar_loss + act_loss + base_loss
-                if self.deepex:
-                    print(epoch, i, loss.item(), pos_loss.item(), gen_loss.item(), end='\r')
-                else:
-                    print(epoch, i, loss.item(), end='\r')
+
+                print(epoch, i, loss.item(), end='\r')
 
 
                 # Backward Pass
                 opti.zero_grad()
                 loss.backward()
                 opti.step()
-                if self.deepex:
-                    log.append([loss.item(), base_loss.item(), tar_loss.item(), act_loss.item(), ball_loss.item(),pos_loss.item(), gen_loss.item()])
-                else:
-                    log.append([loss.item(), base_loss.item(), tar_loss.item(), act_loss.item(), ball_loss.item()])
+                log.append([loss.item(), base_loss.item(), tar_loss.item(), act_loss.item(), ball_loss.item()])
             
             if self.scheduled:
                 sched.step()
@@ -2058,7 +2034,7 @@ class FlownetSolver():
 
         loss_labels = ['combined', 'base', 'target', 'act-path', 'act-ball']
         for i in range(5):
-            plt.plot(log[:,i].view(-1,10).mean(dim=1), label=loss_labels[i])
+            plt.plot(log[:-(len(log)%10),i].view(-1,10).mean(dim=1), label=loss_labels[i])
 
         plt.legend()
         plt.title(f"{self.path}")
@@ -2066,6 +2042,101 @@ class FlownetSolver():
         plt.close()
         auccess_file.close()
     
+    def train_deepex(self, epochs=20, n_per_sample = 10):
+        self.to_train()
+        actions = self.cache.action_array
+        data_loader = self.train_dataloader
+        noise_dim = self.models["deepex"].inject
+        save_path = f'result/flownet/training/{self.path}/{self.run}/deepex/'
+        os.makedirs(save_path, exist_ok=True)
+
+        gen_opt =  T.optim.Adam(self.models["deepex"].parameters(),
+                        lr=self.lr)
+        disc_opt =  T.optim.Adam(self.models["disc"].parameters(),
+                        lr=self.lr)
+        self.bpbank = self.bpbank.to(self.device)
+
+        for epoch in range(epochs):
+            L.info(f"training deepex: epoch {epoch+1}...")
+            for i, B in enumerate(data_loader):
+                (X, XY, XI) = B
+                X = X.to(self.device)
+                # Prepare Data
+                action_balls = X[:,0]
+                batch_init_scenes = X[:,1:6]
+                
+                for j in range(len(X)):
+                    init_scenes = batch_init_scenes[j].repeat(n_per_sample, 1, 1, 1)
+                    cloud = self.bpbank[XI[j]].repeat(n_per_sample, 1, 1, 1)
+                    #GEN:
+                    if self.directex:
+                        avec1 = self.models["deepex"](init_scenes, inject = T.randn(n_per_sample, noise_dim, device=self.device))
+                        #avec2 = self.models["deepex"](fail_inits, inject = T.randn(n_per_sample, noise_dim, device=self.device))
+                        fake_vals = self.models["disc"](init_scenes, inject = avec1)
+                    else:
+                        avec1 = self.models["deepex"](T.cat((init_scenes, cloud), dim=1), inject = T.randn(n_per_sample, noise_dim, device=self.device))
+                        #avec2 = self.models["deepex"](T.cat((fail_inits, Z[:,0,None]), dim=1), inject = T.randn(n_per_sample, noise_dim, device=self.device))
+                        fake_vals = self.models["disc"](T.cat((init_scenes, cloud), dim=1), inject=avec1)
+
+
+                    gen_loss = F.binary_cross_entropy(fake_vals, T.ones_like(fake_vals))
+                    #fake_vals = self.models["disc"](fail_inits, inject = avec2)
+                    #gen_loss = gen_loss + F.binary_cross_entropy(fake_vals, T.ones_like(fake_vals))
+
+                    gen_opt.zero_grad()
+                    gen_loss.backward()
+                    gen_opt.step()
+
+                    #DISC:
+                    task = self.train_index[XI[j]]
+
+                    solve_actions = actions[self.cache.load_simulation_states(task)==1]
+                    idxs = np.arange(len(solve_actions))
+                    solve_avs = T.from_numpy(solve_actions[np.random.choice(idxs, n_per_sample)]).to(self.device)
+
+                    fail_actions = actions[self.cache.load_simulation_states(task)==-1]
+                    idxs = np.arange(len(fail_actions))
+                    neg_avs = T.from_numpy(fail_actions[np.random.choice(idxs, n_per_sample)]).to(self.device)
+
+                    if self.directex:
+                        avec1 = self.models["deepex"](init_scenes, inject = T.randn(n_per_sample, noise_dim, device=self.device))
+                        #avec2 = self.models["deepex"](fail_inits, inject = T.randn(n_per_sample, noise_dim, device=self.device))
+                        pos_vals = self.models["disc"](init_scenes, inject=solve_avs)
+                        neg_vals = self.models["disc"](init_scenes, inject=avec1)
+                        fake_vals = self.models["disc"](init_scenes, inject=avec1)
+                        #neg_vals = self.models["disc"](init_scenes, inject=avec1)
+                    else:
+                        avec1 = self.models["deepex"](T.cat((init_scenes, cloud), dim=1), inject = T.randn(n_per_sample, noise_dim, device=self.device))
+                        #avec2 = self.models["deepex"](T.cat((fail_inits, Z[:,0,None]), dim=1), inject = T.randn(len(Z), noise_dim, device=self.device))
+                        pos_vals = self.models["disc"](T.cat((init_scenes, cloud), dim=1), inject=solve_avs)
+                        neg_vals = self.models["disc"](T.cat((init_scenes, cloud), dim=1), inject=neg_avs)
+                        fake_vals = self.models["disc"](T.cat((init_scenes, cloud), dim=1), inject=avec1)
+                    #neg_vals = self.models["disc"](fail_inits, inject=fail_avs)
+                    pos_loss = F.binary_cross_entropy(pos_vals, T.ones_like(pos_vals))
+                    #neg_loss = F.binary_cross_entropy(neg_vals, T.zeros_like(neg_vals))
+                    neg_loss = F.binary_cross_entropy(neg_vals, T.zeros_like(neg_vals))
+                    fake_loss = F.binary_cross_entropy(fake_vals, T.zeros_like(fake_vals))
+                    
+                    disc_opt.zero_grad()
+                    disc_loss = (pos_loss+neg_loss)
+                    disc_loss.backward()
+                    disc_opt.step()
+
+                    if not i%100:
+                        render = []
+                        for a in avec1.cpu():
+                            render.append(draw_ball(self.width, a[0],a[1],a[2]/8, invert_y = True))
+                        render = T.stack(render, dim=0)[:,None].cpu()
+                        viz = np.concatenate(np.concatenate(T.cat((init_scenes.cpu(), cloud.cpu(), render, (cloud.cpu()+render)/2, self.cut_off(init_scenes.cpu()+cloud.cpu()+render).cpu()), dim =1).numpy(), axis=1), axis=1)
+                        plt.imsave(save_path+f"{epoch}-{i}-{j}.png",viz)
+
+                if not i%100:
+                    print(f"{epoch}-{i}-{j}", pos_loss.item(), neg_loss.item(), fake_loss.item(), gen_loss.item(), avec1-solve_avs, end="\r")
+                    L.info(f"{epoch}-{i}-{j}, {pos_loss.item()}, {neg_loss.item()}, {fake_loss.item()}, {gen_loss.item()}, {avec1[0]-solve_avs[0]}")
+            
+            self.save_models(self.setup,self.fold, load_from=-1)
+
+                
     def train_brute_search(self, train_mode='CONS', epochs=10):
         self.to_train()
         data_loader = self.train_dataloader
@@ -2575,10 +2646,12 @@ class FlownetSolver():
         
                     # Extract action and draw:
                     drawings = T.zeros_like(ball_pred)
+                    avs = []
                     print("drawing balls for batch", i)
                     for b_idx, ball in enumerate(ball_pred[:,0].cpu()):
                         mask = np.max(init_scenes[b_idx].cpu().numpy(), axis=0)
                         a = grow_action_vector(ball, r_fac =self.r_fac, check_border=True, num_seeds=self.num_seeds, mask=mask)
+                        avs.append(a)
                         #print(a)
                         drawn = draw_ball(self.width, a[0],a[1],a[2], invert_y = True)
                         drawings[b_idx, 0] = drawn 
@@ -2666,11 +2739,17 @@ class FlownetSolver():
 
                         pbl = self.cut_off(diff_batch_left.cpu())
                         pbr = self.cut_off(diff_batch_right.cpu())
+                        tasks = [index[idx] for idx in XI.tolist()]
+                        sim = phyre.initialize_simulator(tasks, 'ball')
                         for j in range(pbl.shape[0]):
+                            av = avs[j]
+                            res = sim.simulate_action(j, av, stride=40)
+                            if not res.status.is_solved():
+                                continue
                             lpb = (pbl[j])[:,None]
                             rpb = (pbr[j])[:,None]
                             tmp_pb = T.cat((lpb, rpb), dim=1)
-                            vis_batch(tmp_pb, f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}', f'visual_{i}_{j}', rows=text_left, descr=text_right)
+                            vis_batch(tmp_pb, f'result/flownet/inspect/{self.path}/{self.run}/{eval_setup}_fold_{fold}', f'visual_{i}_{j}_{tasks[j]}', rows=text_left, descr=text_right)
 
     def inspect_brute_search(self, eval_setup, fold, train_mode='CONS', epochs=1):
         self.to_train()
@@ -2828,7 +2907,7 @@ class FlownetSolver():
 
     def load_models(self, setup="ball_within_template", fold=0, device='cpu', no_second_stage=False, load_from=-1):
         setup_name = "within" if setup=='ball_within_template' else ("cross"  if setup=='ball_cross_template' else "custom")
-
+        self.load_from = load_from
         load_path = f"saves/flownet/{self.path}_{setup_name}_{fold}_{load_from}"
         for model in self.models:
             if no_second_stage and (model in ["sim_net", "comb_net", "success_net"]):
@@ -2836,13 +2915,23 @@ class FlownetSolver():
             print("loading:", load_path+f'/{model}.pt')
             self.models[model].load_state_dict(T.load(load_path+f'/{model}.pt', map_location=T.device(device)))
 
+        try:
+            self.bpbank = T.load(load_path+f'/ball-predictions.pt')
+        except Exception as e:
+            print(e)
+            print("continuing with empty ball prediction bank")
+
+
     def save_models(self, setup="ball_within_template", fold=0, load_from=-1):
         setup_name = "within" if setup=='ball_within_template' else ("cross"  if setup=='ball_cross_template' else "custom")
         save_path = f"saves/flownet/{self.path}_{setup_name}_{fold}_{load_from}"
         os.makedirs(save_path, exist_ok=True)
+        self.load_from = load_from
         for model in self.models:
             print("saving:", save_path+f'/{model}.pt')
             T.save(self.models[model].state_dict(), save_path+f'/{model}.pt')
+
+        T.save(self.bpbank, save_path+f'/ball-predictions.pt')
 
 def neighbs(pos, shape, back, value):
     y, x = pos

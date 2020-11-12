@@ -14,6 +14,7 @@ import json
 import gzip
 from PIL import ImageDraw, Image, ImageFont
 import io
+import logging as L
 
 
 def make_dual_dataset(path, size=(32,32), save=True):
@@ -82,11 +83,12 @@ def make_mono_dataset(path, size=(32,32), tasks=[], batch_size = 32, solving=Tru
         print(f"Loaded dataset from {path} with shape:", X.shape)
     
     # MAKE CORRECT SELECTION
-    selection = [index.index(task) for task in tasks if task in index]
+    selection = [i for (i,task) in enumerate(index) if task in tasks]
     #print(len(index), len(tasks), len(selection))
     X = X[selection]
     Y = Y[selection]
     index = [index[s] for s in selection]
+    L.info(f"Loaded dataset from {path} with shape: {X.shape}")
 
     assert len(X)==len(Y)==len(index), "All should be of equal length"
         
@@ -884,7 +886,7 @@ def get_auccess_for_n_tries(n):
         eva.maybe_log_attempt(0, phyre.SimulationStatus.NOT_SOLVED)
     for _ in range(101-n):
         eva.maybe_log_attempt(0, phyre.SimulationStatus.SOLVED)
-    return eva.get_auccess()
+    return eva.compute_all_metrics()
 
 def get_auccess_for_n_tries_first_only(n):
     eva = phyre.Evaluator(['00000:000'])
@@ -1014,6 +1016,22 @@ if __name__ == "__main__":
     # Collecting trajectory lookup
     #collect_actions()
     #exit()
+    if True:
+        print(get_auccess_for_n_tries(50))
+        exit()
+
+    if True:
+        eval_setup = 'ball_within_template'
+        for fold_id in range(9):
+            train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+            all_tasks = set(train_ids+dev_ids+test_ids)
+            train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
+            all_tasks2 = set(train_ids+dev_ids+test_ids)
+
+            print(all_tasks == all_tasks2)
+        exit()
+
+
 
     cache = phyre.get_default_100k_cache('ball')
     cactions = cache.action_array

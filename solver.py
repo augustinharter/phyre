@@ -177,6 +177,7 @@ if __name__ == "__main__":
         seeds = int(sys.argv[sys.argv.index("--seeds")+1]) if "--seeds" in sys.argv else 1
         foldstart = int(sys.argv[sys.argv.index("--foldstart")+1]) if "--foldstart" in sys.argv else 0
         batchsize = int(sys.argv[sys.argv.index("--batchsize")+1]) if "--batchsize" in sys.argv else 32
+        epochstart = int(sys.argv[sys.argv.index("--epochstart")+1]) if "--epochstart" in sys.argv else 0
         neckfak = int(sys.argv[sys.argv.index("--neckfak")+1]) if "--neckfak" in sys.argv else 1
         lr = float(sys.argv[sys.argv.index("--lr")+1]) if "--lr" in sys.argv else 0.003
         gt_paths = "-gt-paths" in sys.argv
@@ -194,21 +195,24 @@ if __name__ == "__main__":
         uniform = '-uniform' in sys.argv
         puretrain = '-puretrain' in sys.argv
         deepex = '-deepex' in sys.argv
+        dtrain = '-dtrain' in sys.argv
+        singleviz = '-singleviz' in sys.argv
 
         auccess = []
         auc_dict = dict()
         #for eval_setup in ['ball_cross_template', 'ball_within_template']:
         for eval_setup in ['ball_within_template', 'ball_cross_template']:
             auccess.append(eval_setup)
-            for fold_id in range(foldstart+folds):
+            print(foldstart, folds)
+            for fold_id in range(foldstart, foldstart+folds):
                 solver = FlownetSolver(model_path, type, width, fold=fold_id, setup=eval_setup, bs=batchsize, uniform=uniform, radmode=radmode,
-                    scheduled= scheduled, lr=lr, smart=smart, run=run, num_seeds=seeds, 
+                    scheduled= scheduled, lr=lr, smart=smart, run=run, num_seeds=seeds, epochstart=epochstart,
                     device=device, hidfac=hidfac, dijkstra=dijkstra, dropout=dropout, deepex=deepex, 
                     neck=neckfak, altconv=altconv, train_mode=train_mode, puretrain=puretrain)
 
                 train_ids, dev_ids, test_ids = phyre.get_fold(eval_setup, fold_id)
                 train_ids = train_ids + dev_ids
-                dev_ids = []
+                dev_ids = tuple()
 
                 if "-inspect" in sys.argv:
                     inspect_ids = []
@@ -230,6 +234,14 @@ if __name__ == "__main__":
                 if "-load" in sys.argv:
                     L.info(model_path +" "+eval_setup+" "+str(fold_id)+" "+str(load_from)+" "+ "|| loading models...")
                     solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
+
+                results_path = f'result/flownet/result/{solver.path}/{solver.run}/'
+                os.makedirs(results_path, exist_ok=True)
+                if os.path.exists(results_path+"/results.json"):
+                    with open(results_path+"/results.json", "r") as fp:
+                        resdic = json.load(fp)
+                else:
+                    resdic = dict()
 
                 if "-train" in sys.argv:
                     if type=="brute":
@@ -267,6 +279,11 @@ if __name__ == "__main__":
                     L.info(model_path+" "+ eval_setup+" "+ str(fold_id)+" "+ "|| saving models...")
                     solver.save_models(setup=eval_setup, fold=fold_id)
 
+                if dtrain:
+                    L.info(model_path+" "+ eval_setup+" "+ str(fold_id)+" "+ "|| training deepex...")
+                    solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=nper, shuffle=shuffle, pertempl=pertempl)
+                    solver.train_deepex(epochs=epochs)
+
                 if "-inspect" in sys.argv:
                     if type=="brute":
                         L.info(model_path+" "+ eval_setup+" "+ str(fold_id)+" "+ "|| loading data for brute testing...")
@@ -282,7 +299,7 @@ if __name__ == "__main__":
                         L.info(model_path+" "+ eval_setup+" "+ str(fold_id)+" "+ "|| loading data for generative testing...")
                         solver.load_data(setup=eval_setup, fold=fold_id, n_per_task=1, shuffle=shuffle, test=True, test_tasks=inspect_ids, setup_name="inspect4per"+("_cross" if eval_setup == 'ball_cross_template' else ""), batch_size = 100)
                         L.info(model_path+" "+ eval_setup+" "+ str(fold_id)+" "+ "|| inspecting generative performance...")
-                        solver.inspect_supervised(eval_setup, fold_id, train_mode = train_mode)
+                        solver.inspect_supervised(eval_setup, fold_id, train_mode = train_mode, single_viz = singleviz)
                         
                 if "-solve" in sys.argv:
                     L.info(model_path+" "+ eval_setup+" "+ str(fold_id)+" "+ "|| getting auccess...")
@@ -302,20 +319,20 @@ if __name__ == "__main__":
                         auccess.append(local_auccess)
                     else:
                         #solver.load_models(setup=eval_setup, fold=fold_id, no_second_stage=no_scnd_stage, load_from=load_from)
-                        local_auccess = solver.generative_auccess(test_ids, f'{eval_setup}_{fold_id}', pure_noise=noise)
+                        local_auccess, percent = solver.generative_auccess(test_ids, f'{eval_setup}_{fold_id}', pure_noise=noise)
                         #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                         os.makedirs(f'result/solver/result/{solver.path}/{run}', exist_ok=True)
                         with open(f'result/solver/result/{solver.path}/{run}/{eval_setup}_{fold_id}.txt', 'w') as handle:
-                            handle.write(f"auccess: {local_auccess}")
+                            handle.write(f"auccess: {local_auccess} percentage-in-ten-attempts: {percent}")
                         auccess.append(local_auccess)
 
                 if "-solve-templ" in sys.argv:
                     L.info(model_path+" "+ eval_setup+" "+ str(fold_id)+" "+ "|| getting auccess per template...")
                     for template in [('0000'+str(i))[-5:] for i in range(25)]:
-                        ids = [id for id in test_ids+dev_ids if id.startswith(template)]
+                        ids = [id for id in test_ids if id.startswith(template)]
                         if not ids:
                             continue
-                        L.info("solving" +" "+ ids)
+                        L.info("solving" +" "+ str(ids))
                         if type=="brute":
                             local_auccess = solver.brute_auccess(ids)
                             L.info(f"{template} auccess: {local_auccess}")
@@ -339,16 +356,22 @@ if __name__ == "__main__":
                             with open(f'result/solver/result/{solver.path}/{run}/auccess-dict.json', 'w') as fp:
                                 json.dump(auc_dict, fp)
                         else:
-                            local_auccess = solver.generative_auccess(ids, f'{eval_setup}_{fold_id}_{template}', pure_noise=noise)
+                            local_auccess, local_perc = solver.generative_auccess(ids, f'{eval_setup}_{fold_id}_{template}', pure_noise=noise)
                             L.info(f"{template} auccess: {local_auccess}")
                             #auccess.append( get_auccess(solver, (test_ids+dev_ids)[:], solve_noise=False, save_tries=True, brute=True) )
                             os.makedirs(f'result/solver/result/{solver.path}/{run}', exist_ok=True)
-                            with open(f'result/solver/result/{solver.path}/{run}/individual_{eval_setup}_{fold_id}.txt', 'a') as handle:
+                            with open(f'result/solver/result/{solver.path}/{run}/individual_{eval_setup}_{fold_id}_auccess.txt', 'a') as handle:
                                 handle.write(f"\n{template} auccess: {local_auccess}")
+                            with open(f'result/solver/result/{solver.path}/{run}/individual_{eval_setup}_{fold_id}_percent.txt', 'a') as handle:
+                                handle.write(f"\n{template} percent-after-ten: {local_perc}")
                             auccess.append(local_auccess)
                             auc_dict[f"{eval_setup}_{fold_id}_{template}"] = local_auccess
                             with open(f'result/solver/result/{solver.path}/{run}/auccess-dict.json', 'w') as fp:
                                 json.dump(auc_dict, fp)
+                            resdic[f"e{solver.load_from}-{eval_setup}-f{fold_id}-{template}"] = (local_auccess, local_perc)
+                            with open(f'result/flownet/result/{solver.path}/{run}/results.json', 'w') as fp:
+                                json.dump(resdic, fp)
+
                 
                         """
                         auccess.append( get_auccess(solver, test_ids+dev_ids, solve_noise=True, save_tries=True) )
